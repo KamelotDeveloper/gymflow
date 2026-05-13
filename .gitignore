@@ -1,0 +1,12 @@
+node_modules
+dist
+.env.local
+.env*.local
+supabase.txt
+
+# Temp directories
+CUsersGiulianoAppDataLocalTempopencodegymflow-temp/
+supabase/.temp/
+
+# Gentle AI project metadata
+.atl/

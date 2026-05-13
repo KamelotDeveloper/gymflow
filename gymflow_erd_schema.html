@@ -1,0 +1,144 @@
+
+<style>
+#erd { padding: 8px 0; }
+#erd svg { width: 100%; height: auto; }
+</style>
+<div id="erd"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"Anthropic Sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '13px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    lineColor: dark ? '#9c9a92' : '#73726c',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+    primaryColor: dark ? '#3C3489' : '#EEEDFE',
+    primaryTextColor: dark ? '#CECBF6' : '#26215C',
+    primaryBorderColor: dark ? '#534AB7' : '#AFA9EC',
+    secondaryColor: dark ? '#085041' : '#E1F5EE',
+    tertiaryColor: dark ? '#444441' : '#F1EFE8',
+  },
+});
+const diagram = `erDiagram
+  profiles {
+    uuid id PK
+    text role
+    text full_name
+    text phone
+    text avatar_url
+    timestamp created_at
+  }
+  membership_plans {
+    uuid id PK
+    text name
+    text duration_type
+    int duration_months
+    numeric price
+    boolean is_active
+  }
+  memberships {
+    uuid id PK
+    uuid profile_id FK
+    uuid plan_id FK
+    date start_date
+    date end_date
+    text status
+    boolean admin_override
+    text override_reason
+    timestamp updated_at
+  }
+  routines {
+    uuid id PK
+    uuid created_by FK
+    text name
+    text description
+    boolean is_template
+    timestamp created_at
+  }
+  routine_assignments {
+    uuid id PK
+    uuid routine_id FK
+    uuid profile_id FK
+    date assigned_at
+    boolean is_active
+  }
+  exercises {
+    uuid id PK
+    text name
+    text muscle_group
+    text video_url
+    text video_type
+    text instructions
+  }
+  routine_exercises {
+    uuid id PK
+    uuid routine_id FK
+    uuid exercise_id FK
+    int sets
+    int reps
+    numeric weight_kg
+    int order_index
+  }
+  workout_sessions {
+    uuid id PK
+    uuid profile_id FK
+    uuid routine_id FK
+    date session_date
+    text notes
+    int duration_mins
+  }
+  workout_logs {
+    uuid id PK
+    uuid session_id FK
+    uuid exercise_id FK
+    int set_number
+    int reps_done
+    numeric weight_used_kg
+    boolean is_baseline
+    timestamp logged_at
+  }
+
+  profiles ||--o{ memberships : has
+  membership_plans ||--o{ memberships : defines
+  profiles ||--o{ routines : creates
+  routines ||--o{ routine_assignments : assigned_via
+  profiles ||--o{ routine_assignments : receives
+  routines ||--o{ routine_exercises : contains
+  exercises ||--o{ routine_exercises : used_in
+  profiles ||--o{ workout_sessions : logs
+  routines ||--o{ workout_sessions : follows
+  workout_sessions ||--o{ workout_logs : records
+  exercises ||--o{ workout_logs : tracked_in
+`;
+const { svg } = await mermaid.render('erd-svg', diagram);
+document.getElementById('erd').innerHTML = svg;
+
+document.querySelectorAll('#erd svg .node').forEach(node => {
+  const firstPath = node.querySelector('path[d]');
+  if (!firstPath) return;
+  const d = firstPath.getAttribute('d');
+  const nums = d.match(/-?[\d.]+/g)?.map(Number);
+  if (!nums || nums.length < 8) return;
+  const xs = [nums[0], nums[2], nums[4], nums[6]];
+  const ys = [nums[1], nums[3], nums[5], nums[7]];
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', x); rect.setAttribute('y', y);
+  rect.setAttribute('width', w); rect.setAttribute('height', h);
+  rect.setAttribute('rx', '8');
+  for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
+    if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
+  }
+  firstPath.replaceWith(rect);
+});
+document.querySelectorAll('#erd svg .row-rect-odd path, #erd svg .row-rect-even path').forEach(p => {
+  p.setAttribute('stroke', 'none');
+});
+</script>
