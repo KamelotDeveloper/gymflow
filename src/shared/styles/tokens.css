@@ -1,0 +1,12 @@
+:root {
+  --gym-bg:         #111111;
+  --gym-bg-hover:   #1f1f1f;
+  --gym-red:        #DC2626;
+  --gym-red-hover:  #B91C1C;
+  --gym-text:       #FFFFFF;
+  --gym-muted:      #9ca3af;
+  --gym-border:     #2a2a2a;
+  --gym-content-bg: #f9fafb;
+  --gym-white:      #FFFFFF;
+  --gym-gray-border:#e5e7eb;
+}

@@ -437,7 +437,31 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      get_members: {
+        Args: never
+        Returns: {
+          id: string
+          full_name: string
+          phone: string | null
+          created_at: string
+        }[]
+      }
+      get_my_profile: {
+        Args: never
+        Returns: {
+          id: string
+          role: Database["public"]["Enums"]["user_role"]
+          full_name: string
+        }[]
+      }
       is_admin: { Args: never; Returns: boolean }
+      create_member: {
+        Args: {
+          p_full_name: string
+          p_phone?: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       duration_type: "monthly" | "biannual" | "annual"
