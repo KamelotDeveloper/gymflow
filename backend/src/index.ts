@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import cron from 'node-cron'
 import membersRouter from './routes/members.js'
+import paymentsRouter from './routes/payments.js'
 import { expireMemberships } from './jobs/expireMemberships.js'
 
 const app = express()
@@ -15,6 +16,7 @@ app.use(express.json())
 
 // ── Routes ──
 app.use('/api/members', membersRouter)
+app.use('/api/payments', paymentsRouter)
 
 // ── Health check ──
 app.get('/api/health', (_req, res) => {
