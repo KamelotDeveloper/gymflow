@@ -10,6 +10,7 @@ import Exercises from './admin/pages/Exercises'
 import Routines from './admin/pages/Routines'
 import News from './admin/pages/News'
 import Config from './admin/pages/Config'
+import Payments from './admin/pages/Payments'
 import UserHome from './user/pages/Home'
 import UserRutina from './user/pages/Rutina'
 import UserExercises from './user/pages/Exercises'
@@ -35,6 +36,7 @@ function App() {
                   <Route path="plans" element={<Plans />} />
                   <Route path="plan-catalog" element={<PlanCatalog />} />
                   <Route path="news" element={<News />} />
+                  <Route path="payments" element={<Payments />} />
                   <Route path="config" element={<Config />} />
                   <Route path="*" element={<Navigate to="dashboard" replace />} />
                 </Routes>

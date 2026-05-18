@@ -1,7 +1,18 @@
 import { useEffect, useState, useRef } from 'react'
 import AdminLayout from '../../shared/components/AdminLayout'
 import { supabase } from '../../shared/lib/supabase'
-import { Loader2, Upload } from 'lucide-react'
+import {
+  Loader2,
+  Upload,
+  Banknote,
+  CreditCard,
+  Building2,
+  ToggleLeft,
+  ToggleRight,
+  Pencil,
+  Check,
+  X,
+} from 'lucide-react'
 
 type GymConfig = {
   id: string
@@ -27,8 +38,22 @@ export default function Config() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
 
+  // Payment methods state
+  const [paymentMethods, setPaymentMethods] = useState<any[]>([])
+  const [methodsLoading, setMethodsLoading] = useState(true)
+  const [editingMethod, setEditingMethod] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({
+    cbu: '',
+    alias: '',
+    titular: '',
+    cuit: '',
+    banco: '',
+  })
+  const [savingMethod, setSavingMethod] = useState(false)
+
   useEffect(() => {
     fetchConfig()
+    fetchPaymentMethods()
   }, [])
 
   const fetchConfig = async () => {
@@ -87,6 +112,120 @@ export default function Config() {
       console.error('Error subiendo logo:', err)
     } finally {
       setUploadingLogo(false)
+    }
+  }
+
+  // ── Payment methods ──
+
+  const BACKEND_URL =
+    import.meta.env.VITE_BACKEND_URL ||
+    import.meta.env.VITE_API_URL ||
+    'http://localhost:3000'
+
+  const fetchPaymentMethods = async () => {
+    setMethodsLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      // Fetch all methods (active + inactive) for admin config
+      const res = await fetch(`${BACKEND_URL}/api/payments/methods`, { headers })
+      if (!res.ok) {
+        console.error('Error fetching payment methods')
+        return
+      }
+      const data = await res.json()
+      setPaymentMethods(data.methods ?? [])
+    } catch (err) {
+      console.error('Error fetching payment methods:', err)
+    } finally {
+      setMethodsLoading(false)
+    }
+  }
+
+  const handleToggleMethod = async (method: any) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token}`,
+      }
+      const res = await fetch(`${BACKEND_URL}/api/payments/methods/${method.id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ is_active: !method.is_active }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        console.error('Error toggling method:', err)
+        return
+      }
+      // Optimistic update
+      setPaymentMethods((prev) =>
+        prev.map((m) =>
+          m.id === method.id ? { ...m, is_active: !method.is_active } : m,
+        ),
+      )
+    } catch (err) {
+      console.error('Error toggling payment method:', err)
+    }
+  }
+
+  const handleEditMethod = (method: any) => {
+    const config = method.config ?? {}
+    setEditForm({
+      cbu: config.cbu ?? '',
+      alias: config.alias ?? '',
+      titular: config.titular ?? '',
+      cuit: config.cuit ?? '',
+      banco: config.banco ?? '',
+    })
+    setEditingMethod(method.id)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingMethod(null)
+    setEditForm({ cbu: '', alias: '', titular: '', cuit: '', banco: '' })
+  }
+
+  const handleSaveMethodConfig = async (methodId: string) => {
+    setSavingMethod(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token}`,
+      }
+      const res = await fetch(`${BACKEND_URL}/api/payments/methods/${methodId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          config: {
+            cbu: editForm.cbu.trim(),
+            alias: editForm.alias.trim(),
+            titular: editForm.titular.trim(),
+            cuit: editForm.cuit.trim(),
+            banco: editForm.banco.trim(),
+          },
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        console.error('Error saving method config:', err)
+        return
+      }
+      const data = await res.json()
+      // Update local state
+      setPaymentMethods((prev) =>
+        prev.map((m) => (m.id === methodId ? data.method : m)),
+      )
+      setEditingMethod(null)
+    } catch (err) {
+      console.error('Error saving method config:', err)
+    } finally {
+      setSavingMethod(false)
     }
   }
 
@@ -225,6 +364,149 @@ export default function Config() {
               {saving ? 'Guardando…' : 'Guardar configuración'}
             </button>
           </div>
+        </div>
+
+        {/* ── Payment methods section ── */}
+        <div className="mt-8">
+          <h2 className="text-base font-bold text-gray-900 dark:text-white mb-4">
+            Métodos de pago
+          </h2>
+
+          {methodsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 size={20} className="animate-spin text-gray-400" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {paymentMethods.map((method) => {
+                const METHOD_ICONS: Record<string, typeof CreditCard> = {
+                  mp: CreditCard,
+                  bank_transfer: Building2,
+                  cash: Banknote,
+                }
+                const METHOD_COLORS: Record<string, string> = {
+                  mp: 'bg-sky-100 text-sky-700 border-sky-200',
+                  bank_transfer: 'bg-violet-100 text-violet-700 border-violet-200',
+                  cash: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+                }
+                const methodColors = METHOD_COLORS[method.type] ?? 'bg-gray-100 text-gray-700 border-gray-200'
+                const Icon = METHOD_ICONS[method.type] ?? CreditCard
+
+                return (
+                  <div
+                    key={method.id}
+                    className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4"
+                  >
+                    <div className="flex items-center gap-4">
+                      {/* Icon */}
+                      <div
+                        className={`flex items-center justify-center w-10 h-10 rounded-lg border ${methodColors}`}
+                      >
+                        <Icon size={20} />
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-gray-900 dark:text-white">
+                          {method.name}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          {method.type === 'mp' && 'Mercado Pago — pago online'}
+                          {method.type === 'bank_transfer' && 'Transferencia bancaria'}
+                          {method.type === 'cash' && 'Efectivo — pago en el gimnasio'}
+                        </p>
+                      </div>
+
+                      {/* Toggle */}
+                      <button
+                        onClick={() => handleToggleMethod(method)}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                          method.is_active
+                            ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                            : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        {method.is_active ? (
+                          <>
+                            <ToggleRight size={16} />
+                            Activo
+                          </>
+                        ) : (
+                          <>
+                            <ToggleLeft size={16} />
+                            Inactivo
+                          </>
+                        )}
+                      </button>
+
+                      {/* Edit bank details */}
+                      {method.type === 'bank_transfer' && (
+                        <button
+                          onClick={() => handleEditMethod(method)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          <Pencil size={14} />
+                          Editar datos
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Bank details edit form */}
+                    {editingMethod === method.id && (
+                      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {([
+                            { key: 'cbu', label: 'CBU', placeholder: '0000000000000000000000' },
+                            { key: 'alias', label: 'Alias', placeholder: 'alias.mp' },
+                            { key: 'titular', label: 'Titular', placeholder: 'Gym SA' },
+                            { key: 'cuit', label: 'CUIT', placeholder: '30-00000000-0' },
+                            { key: 'banco', label: 'Banco', placeholder: 'BPC' },
+                          ] as const).map((field) => (
+                            <div key={field.key}>
+                              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+                                {field.label}
+                              </label>
+                              <input
+                                type="text"
+                                value={(editForm as any)[field.key]}
+                                onChange={(e) =>
+                                  setEditForm({ ...editForm, [field.key]: e.target.value })
+                                }
+                                placeholder={field.placeholder}
+                                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#DC2626] focus:border-transparent"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 mt-4">
+                          <button
+                            onClick={handleCancelEdit}
+                            disabled={savingMethod}
+                            className="flex items-center gap-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+                          >
+                            <X size={16} />
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={() => handleSaveMethodConfig(method.id)}
+                            disabled={savingMethod}
+                            className="flex items-center gap-1.5 rounded-lg bg-[#DC2626] text-white text-sm font-bold px-4 py-2 hover:bg-[#b71c1c] transition-colors disabled:opacity-50"
+                          >
+                            {savingMethod ? (
+                              <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                              <Check size={16} />
+                            )}
+                            {savingMethod ? 'Guardando...' : 'Guardar datos'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
     </AdminLayout>

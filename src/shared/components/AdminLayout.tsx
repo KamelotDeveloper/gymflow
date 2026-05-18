@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type ComponentType } from 'react'
+import { useState, useEffect, type ReactNode, type ComponentType } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuthContext } from './AuthContext'
 import {
@@ -11,8 +11,10 @@ import {
   Tags,
   Menu,
   LogOut,
+  DollarSign,
 } from 'lucide-react'
 import { useGymConfig } from '../hooks/useGymConfig'
+import { supabase } from '../lib/supabase'
 
 type NavItem = {
   icon: ComponentType<{ size?: number }>
@@ -26,6 +28,7 @@ const navItems: NavItem[] = [
   { icon: Dumbbell, label: 'Ejercicios', path: '/admin/exercises' },
   { icon: Tags, label: 'Planes', path: '/admin/plan-catalog' },
   { icon: CreditCard, label: 'Membresías', path: '/admin/plans' },
+  { icon: DollarSign, label: 'Pagos', path: '/admin/payments' },
   { icon: Newspaper, label: 'Noticias', path: '/admin/news' },
   { icon: Settings, label: 'Configuración', path: '/admin/config' },
 ]
@@ -49,6 +52,25 @@ export default function AdminLayout({ children, pageTitle }: Props) {
   const { profile, signOut } = useAuthContext()
   const { config } = useGymConfig()
   const navigate = useNavigate()
+  const [pendingCount, setPendingCount] = useState(0)
+
+  // Poll pending payments count every 30s
+  useEffect(() => {
+    const fetchPendingCount = async () => {
+      try {
+        const { count } = await supabase
+          .from('payment_transactions')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending') as any
+        setPendingCount(count ?? 0)
+      } catch {
+        // silently ignore — badge is non-critical
+      }
+    }
+    fetchPendingCount()
+    const interval = setInterval(fetchPendingCount, 30_000)
+    return () => clearInterval(interval)
+  }, [])
 
   const handleSignOut = async () => {
     await signOut()
@@ -144,6 +166,7 @@ export default function AdminLayout({ children, pageTitle }: Props) {
                 height: 44,
                 transition: 'background-color 0.15s',
                 gap: collapsed ? 0 : 12,
+                position: collapsed ? 'relative' : undefined,
               }}
             >
               <item.icon size={20} />
@@ -156,6 +179,50 @@ export default function AdminLayout({ children, pageTitle }: Props) {
                   }}
                 >
                   {item.label}
+                </span>
+              )}
+              {/* Pending badge for Pagos */}
+              {!collapsed && item.label === 'Pagos' && pendingCount > 0 && (
+                <span
+                  style={{
+                    marginLeft: 'auto',
+                    backgroundColor: '#DC2626',
+                    color: '#fff',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    minWidth: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0 5px',
+                  }}
+                >
+                  {pendingCount > 99 ? '99+' : pendingCount}
+                </span>
+              )}
+              {/* When collapsed, show badge above the icon */}
+              {collapsed && item.label === 'Pagos' && pendingCount > 0 && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 2,
+                    right: 2,
+                    backgroundColor: '#DC2626',
+                    color: '#fff',
+                    fontSize: 9,
+                    fontWeight: 700,
+                    minWidth: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0 3px',
+                  }}
+                >
+                  {pendingCount > 99 ? '99+' : pendingCount}
                 </span>
               )}
             </NavLink>
