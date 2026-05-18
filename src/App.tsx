@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import AdminDashboard from './admin/pages/Dashboard'
 import Members from './admin/pages/Members'
 import Plans from './admin/pages/Plans'
+import PlanCatalog from './admin/pages/PlanCatalog'
 import Exercises from './admin/pages/Exercises'
 import Routines from './admin/pages/Routines'
 import News from './admin/pages/News'
@@ -31,6 +32,7 @@ function App() {
                   <Route path="routines" element={<Routines />} />
                   <Route path="exercises" element={<Exercises />} />
                   <Route path="plans" element={<Plans />} />
+                  <Route path="plan-catalog" element={<PlanCatalog />} />
                   <Route path="news" element={<News />} />
                   <Route path="config" element={<Config />} />
                   <Route path="*" element={<Navigate to="dashboard" replace />} />

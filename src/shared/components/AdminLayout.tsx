@@ -8,6 +8,7 @@ import {
   CreditCard,
   Newspaper,
   Settings,
+  Tags,
   Menu,
   LogOut,
 } from 'lucide-react'
@@ -23,7 +24,8 @@ const navItems: NavItem[] = [
   { icon: Users, label: 'Miembros', path: '/admin/members' },
   { icon: ClipboardList, label: 'Rutinas', path: '/admin/routines' },
   { icon: Dumbbell, label: 'Ejercicios', path: '/admin/exercises' },
-  { icon: CreditCard, label: 'Planes', path: '/admin/plans' },
+  { icon: Tags, label: 'Planes', path: '/admin/plan-catalog' },
+  { icon: CreditCard, label: 'Membresías', path: '/admin/plans' },
   { icon: Newspaper, label: 'Noticias', path: '/admin/news' },
   { icon: Settings, label: 'Configuración', path: '/admin/config' },
 ]

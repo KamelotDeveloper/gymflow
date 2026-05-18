@@ -3,7 +3,7 @@ import AdminLayout from '../../shared/components/AdminLayout'
 import { supabase } from '../../shared/lib/supabase'
 import { Search, UserPlus, Pencil, Trash2, X } from 'lucide-react'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'
 
 type Member = {
   id: string
@@ -106,19 +106,36 @@ export default function Members() {
 
     try {
       if (modalMode === 'create') {
-        const res = await fetch(`${API_URL}/api/members`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: formEmail.trim(),
-            password: formPassword,
-            full_name: formName.trim(),
-            phone: formPhone.trim() || undefined,
-          }),
-        })
+        let res: Response
+        try {
+          res = await fetch(`${API_URL}/api/members`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: formEmail.trim(),
+              password: formPassword,
+              full_name: formName.trim(),
+              phone: formPhone.trim() || undefined,
+            }),
+          })
+        } catch (fetchErr) {
+          console.error('Fetch error — backend no responde:', fetchErr)
+          throw new Error(
+            `No se puede conectar con el backend (${API_URL}). ` +
+            'Asegurate de que el servidor esté corriendo y el CORS permita este origen.',
+          )
+        }
 
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Error al crear miembro')
+        let data: any
+        try {
+          data = await res.json()
+          console.log('Backend response:', res.status, data)
+        } catch {
+          const text = await res.text().catch(() => '')
+          throw new Error(`Error ${res.status} — respuesta inválida: ${text || '(sin cuerpo)'}`)
+        }
+
+        if (!res.ok) throw new Error(data.error || `Error ${res.status} del servidor`)
 
         alert('Miembro creado con éxito.')
       } else if (modalMode === 'edit' && selectedMember) {
