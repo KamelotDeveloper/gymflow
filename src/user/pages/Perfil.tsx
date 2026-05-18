@@ -143,7 +143,7 @@ export default function UserPerfil() {
       {/* Volver al inicio */}
       <button
         onClick={() => navigate('/user')}
-        className="flex items-center justify-center gap-2 w-full px-4 py-3 text-sm font-medium text-gray-300 border border-white/10 rounded-xl hover:bg-white/10 transition-colors"
+        className="flex items-center justify-center gap-2 w-full px-4 py-3 text-sm font-medium text-gray-300 bg-[#1a1a1a] rounded-xl hover:bg-white/10 transition-colors"
       >
         <Home size={18} />
         Volver al inicio
