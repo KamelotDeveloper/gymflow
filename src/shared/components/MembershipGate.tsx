@@ -2,7 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useAuthContext } from './AuthContext'
 import { supabase } from '../lib/supabase'
 import { fetchActiveMembership, checkMembership } from '../hooks/useMembership'
-import { Loader2, Star, LogOut } from 'lucide-react'
+import { usePayments } from '../hooks/usePayments'
+import PaymentMethodSelector from './PaymentMethodSelector'
+import { Loader2, Star, LogOut, AlertCircle } from 'lucide-react'
 
 type Props = {
   children: ReactNode
@@ -15,13 +17,17 @@ type Plan = {
   price: number
 }
 
-const WHATSAPP_NUMBER = '5491112345678' // TODO: reemplazar con número real del gimnasio
-
 export default function MembershipGate({ children }: Props) {
   const { profile, signOut } = useAuthContext()
+  const { fetchPendingTransactions } = usePayments()
   const [blocked, setBlocked] = useState(false)
   const [loading, setLoading] = useState(true)
   const [plans, setPlans] = useState<Plan[]>([])
+
+  // Payment flow state
+  const [showPaymentSelector, setShowPaymentSelector] = useState(false)
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
+  const [pendingTransaction, setPendingTransaction] = useState<any | null>(null)
 
   useEffect(() => {
     if (!profile?.id) {
@@ -42,6 +48,12 @@ export default function MembershipGate({ children }: Props) {
 
         if (!cancelled) {
           setBlocked(!result.valid)
+        }
+
+        // Check for pending transactions
+        const pending = await fetchPendingTransactions(profile.id)
+        if (!cancelled && pending.length > 0) {
+          setPendingTransaction(pending[0])
         }
       } catch {
         if (!cancelled) setBlocked(false)
@@ -72,8 +84,15 @@ export default function MembershipGate({ children }: Props) {
   const formatPrice = (price: number) =>
     new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(price)
 
-  const whatsappLink = (planName: string) =>
-    `https://wa.me/${WHATSAPP_NUMBER}?text=Hola, quiero renovar mi membresía plan ${planName}`
+  const handleSelectPlan = (plan: Plan) => {
+    setSelectedPlan(plan)
+    setShowPaymentSelector(true)
+  }
+
+  const handlePaymentComplete = () => {
+    setShowPaymentSelector(false)
+    setSelectedPlan(null)
+  }
 
   if (loading) {
     return (
@@ -136,18 +155,29 @@ export default function MembershipGate({ children }: Props) {
                       {formatPrice(plan.price)}
                     </p>
 
-                    <a
-                      href={whatsappLink(plan.name)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      // TODO: reemplazar con pasarela de pago (Mercado Pago u otra)
-                      className="block w-full text-center rounded-lg bg-[#DC2626] text-white text-sm font-bold py-2 hover:bg-[#b71c1c] transition-colors"
+                    <button
+                      onClick={() => handleSelectPlan(plan)}
+                      disabled={!!pendingTransaction}
+                      className="block w-full text-center rounded-lg bg-[#DC2626] text-white text-sm font-bold py-2 hover:bg-[#b71c1c] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      Consultar
-                    </a>
+                      Elegir método de pago
+                    </button>
                   </div>
                 )
               })}
+            </div>
+          )}
+
+          {/* Pending transaction banner */}
+          {pendingTransaction && (
+            <div className="mt-4 rounded-xl border border-yellow-700 bg-yellow-900/20 p-3 flex items-start gap-2.5">
+              <AlertCircle size={18} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-yellow-300">Pago pendiente</p>
+                <p className="text-xs text-yellow-400/70 mt-0.5">
+                  Ya tenés un pago en proceso. Esperá a que sea confirmado.
+                </p>
+              </div>
             </div>
           )}
 
@@ -160,6 +190,20 @@ export default function MembershipGate({ children }: Props) {
             Cerrar sesión
           </button>
         </div>
+
+        {/* Payment Method Selector Modal */}
+        {selectedPlan && profile && (
+          <PaymentMethodSelector
+            open={showPaymentSelector}
+            onClose={() => {
+              setShowPaymentSelector(false)
+              setSelectedPlan(null)
+            }}
+            plan={selectedPlan}
+            profileId={profile.id}
+            onComplete={handlePaymentComplete}
+          />
+        )}
       </div>
     )
   }
