@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthContext } from '../shared/components/AuthContext'
+import { Download, Smartphone, Shield } from 'lucide-react'
 
 export default function Login() {
   const [tab, setTab] = useState<'login' | 'register'>('login')
@@ -11,10 +12,30 @@ export default function Login() {
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState<any>(null)
+  const [_isInstalled, setIsInstalled] = useState(false)
+  const [showLogin, setShowLogin] = useState(false)
   const { signIn, signUp, user, profile } = useAuthContext()
   const navigate = useNavigate()
 
-  // Redirect si ya está autenticado (en useEffect para no violar reglas de React)
+  // Detect PWA installability
+  useEffect(() => {
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsInstalled(true)
+      setShowLogin(true)
+      return
+    }
+
+    const handler = (e: Event) => {
+      e.preventDefault()
+      setInstallPrompt(e)
+    }
+
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  // Redirect si ya está autenticado
   useEffect(() => {
     if (user && profile) {
       const target = profile.role === 'admin' ? '/admin/dashboard' : '/user'
@@ -56,6 +77,59 @@ export default function Login() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleInstall = async () => {
+    if (!installPrompt) return
+    installPrompt.prompt()
+    const { outcome } = await installPrompt.userChoice
+    if (outcome === 'accepted') {
+      setInstallPrompt(null)
+      setIsInstalled(true)
+      setShowLogin(true)
+    }
+  }
+
+  // ── Splash de instalación ──
+  if (installPrompt && !showLogin) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#0a0a0a] px-6 text-center">
+        <div className="mb-8 flex items-center justify-center w-20 h-20 rounded-2xl bg-[#DC2626] shadow-lg">
+          <span className="text-3xl font-black text-white">GF</span>
+        </div>
+
+        <h1 className="text-3xl font-bold text-white mb-2">GymFlow</h1>
+        <p className="text-gray-400 mb-8 max-w-xs">
+          Instalá la app para llevar tu entrenamiento siempre con vos
+        </p>
+
+        <div className="space-y-3 w-full max-w-xs mb-8">
+          <div className="flex items-center gap-3 bg-[#1a1a1a] rounded-xl p-4 text-left">
+            <Smartphone size={20} className="text-[#DC2626] shrink-0" />
+            <p className="text-sm text-gray-300">Sin navegador, como una app nativa</p>
+          </div>
+          <div className="flex items-center gap-3 bg-[#1a1a1a] rounded-xl p-4 text-left">
+            <Shield size={20} className="text-[#DC2626] shrink-0" />
+            <p className="text-sm text-gray-300">Acceso rápido desde tu pantalla de inicio</p>
+          </div>
+        </div>
+
+        <button
+          onClick={handleInstall}
+          className="flex items-center justify-center gap-2 w-full max-w-xs rounded-xl bg-[#DC2626] px-6 py-3.5 text-base font-bold text-white hover:bg-red-700 transition-colors"
+        >
+          <Download size={20} />
+          Instalar app
+        </button>
+
+        <button
+          onClick={() => setShowLogin(true)}
+          className="mt-4 text-sm text-gray-500 hover:text-gray-300 transition-colors"
+        >
+          Ya tenés la app? Iniciar sesión
+        </button>
+      </div>
+    )
   }
 
   return (
