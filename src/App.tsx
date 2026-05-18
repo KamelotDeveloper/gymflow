@@ -15,6 +15,7 @@ import UserRutina from './user/pages/Rutina'
 import UserExercises from './user/pages/Exercises'
 import UserMembresia from './user/pages/Membresia'
 import UserProgreso from './user/pages/Progreso'
+import UserPerfil from './user/pages/Perfil'
 
 function App() {
   return (
@@ -50,6 +51,7 @@ function App() {
                   <Route path="ejercicios" element={<UserExercises />} />
                   <Route path="membresia" element={<UserMembresia />} />
                   <Route path="progreso" element={<UserProgreso />} />
+                  <Route path="perfil" element={<UserPerfil />} />
                   <Route path="*" element={<Navigate to="" replace />} />
                 </Routes>
               </ProtectedRoute>
