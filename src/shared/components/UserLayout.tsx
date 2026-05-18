@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthContext } from './AuthContext'
 import { useGymConfig } from '../hooks/useGymConfig'
@@ -12,6 +12,7 @@ import {
   LogOut,
   Menu,
   X,
+  Download,
 } from 'lucide-react'
 
 type NavItem = {
@@ -52,10 +53,37 @@ type Props = {
 
 export default function UserLayout({ children }: Props) {
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState<any>(null)
+  const [isInstalled, setIsInstalled] = useState(false)
   const { profile, signOut } = useAuthContext()
   const { config } = useGymConfig()
   const navigate = useNavigate()
   const location = useLocation()
+
+  useEffect(() => {
+    // Detect if already installed (display-mode: standalone)
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsInstalled(true)
+    }
+
+    const handler = (e: Event) => {
+      e.preventDefault()
+      setInstallPrompt(e)
+    }
+
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  const handleInstall = async () => {
+    if (!installPrompt) return
+    installPrompt.prompt()
+    const { outcome } = await installPrompt.userChoice
+    if (outcome === 'accepted') {
+      setInstallPrompt(null)
+      setIsInstalled(true)
+    }
+  }
 
   const handleSignOut = async () => {
     await signOut()
@@ -159,6 +187,17 @@ export default function UserLayout({ children }: Props) {
                 <p className="text-xs text-gray-400">Ver perfil</p>
               </div>
             </button>
+          )}
+          {installPrompt && !isInstalled && (
+            <div className="px-4 pb-2">
+              <button
+                onClick={handleInstall}
+                className="flex items-center gap-3 w-full px-2 py-3 text-sm font-medium text-gray-300 hover:text-white transition-colors rounded-lg hover:bg-white/10"
+              >
+                <Download size={18} />
+                Instalar app
+              </button>
+            </div>
           )}
           <div className="px-4 pb-4">
             <button
