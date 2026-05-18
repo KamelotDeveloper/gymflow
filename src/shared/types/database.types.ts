@@ -91,6 +91,7 @@ export type Database = {
           end_date: string
           id: string
           override_reason: string | null
+          payment_transaction_id: string | null
           plan_id: string
           profile_id: string
           start_date: string
@@ -102,6 +103,7 @@ export type Database = {
           end_date: string
           id?: string
           override_reason?: string | null
+          payment_transaction_id?: string | null
           plan_id: string
           profile_id: string
           start_date?: string
@@ -113,6 +115,7 @@ export type Database = {
           end_date?: string
           id?: string
           override_reason?: string | null
+          payment_transaction_id?: string | null
           plan_id?: string
           profile_id?: string
           start_date?: string
@@ -130,6 +133,120 @@ export type Database = {
           {
             foreignKeyName: "memberships_profile_id_fkey"
             columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memberships_payment_transaction_id_fkey"
+            columns: ["payment_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "payment_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_methods: {
+        Row: {
+          config: Json | null
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          type: Database["public"]["Enums"]["payment_method_type"]
+        }
+        Insert: {
+          config?: Json | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          type: Database["public"]["Enums"]["payment_method_type"]
+        }
+        Update: {
+          config?: Json | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          type?: Database["public"]["Enums"]["payment_method_type"]
+        }
+        Relationships: []
+      }
+      payment_transactions: {
+        Row: {
+          amount: number
+          confirmed_at: string | null
+          confirmed_by: string | null
+          created_at: string
+          currency: string
+          id: string
+          mp_payment_id: string | null
+          mp_preference_id: string | null
+          payment_method_id: string
+          plan_id: string
+          profile_id: string
+          receipt_ref: string | null
+          receipt_url: string | null
+          status: Database["public"]["Enums"]["payment_status"]
+        }
+        Insert: {
+          amount: number
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          mp_payment_id?: string | null
+          mp_preference_id?: string | null
+          payment_method_id: string
+          plan_id: string
+          profile_id: string
+          receipt_ref?: string | null
+          receipt_url?: string | null
+          status?: Database["public"]["Enums"]["payment_status"]
+        }
+        Update: {
+          amount?: number
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          mp_payment_id?: string | null
+          mp_preference_id?: string | null
+          payment_method_id?: string
+          plan_id?: string
+          profile_id?: string
+          receipt_ref?: string | null
+          receipt_url?: string | null
+          status?: Database["public"]["Enums"]["payment_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_transactions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "membership_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_payment_method_id_fkey"
+            columns: ["payment_method_id"]
+            isOneToOne: false
+            referencedRelation: "payment_methods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_confirmed_by_fkey"
+            columns: ["confirmed_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -483,6 +600,8 @@ export type Database = {
         | "other"
       user_role: "admin" | "member"
       video_type: "youtube" | "url"
+      payment_method_type: "mp" | "bank_transfer" | "cash"
+      payment_status: "pending" | "confirmed" | "rejected" | "refunded"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -630,6 +749,8 @@ export const Constants = {
       ],
       user_role: ["admin", "member"],
       video_type: ["youtube", "url"],
+      payment_method_type: ["mp", "bank_transfer", "cash"],
+      payment_status: ["pending", "confirmed", "rejected", "refunded"],
     },
   },
 } as const
