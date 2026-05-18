@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAuthContext } from '../../shared/components/AuthContext'
 import { supabase } from '../../shared/lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Shield, Mail } from 'lucide-react'
+import { ArrowLeft, Shield, Mail, Home } from 'lucide-react'
 
 export default function UserPerfil() {
   const { profile, user } = useAuthContext()
@@ -139,6 +139,15 @@ export default function UserPerfil() {
           {pwSaving ? 'Guardando...' : 'Guardar contraseña'}
         </button>
       </div>
+
+      {/* Volver al inicio */}
+      <button
+        onClick={() => navigate('/user')}
+        className="flex items-center justify-center gap-2 w-full px-4 py-3 text-sm font-medium text-gray-300 border border-white/10 rounded-xl hover:bg-white/10 transition-colors"
+      >
+        <Home size={18} />
+        Volver al inicio
+      </button>
     </div>
   )
 }
