@@ -44,7 +44,7 @@ export default function Home() {
         .from('memberships')
         .select('id, start_date, end_date, status, admin_override, plan:membership_plans(name)')
         .eq('profile_id', profile!.id)
-        .order('created_at', { ascending: false })
+        .order('end_date', { ascending: false })
         .limit(1)
         .single()
 

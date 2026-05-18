@@ -67,6 +67,16 @@
 - [x] Home del miembro consume noticias activas desde BD (reemplaza hardcodeadas)
 - [x] Tags con colores automáticos: Aviso (rojo), Nuevo (azul), Importante (amarillo), Promoción (verde)
 
+### 4.7 ✅ Separar Planes (catálogo) de Membresías (asignaciones)
+- [x] Nueva página `PlanCatalog.tsx` — CRUD del catálogo `membership_plans` (nombre, precio, duración, toggle activo)
+- [x] Sidebar: "Planes" (🏷️) → catálogo, "Membresías" (💳) → asignaciones
+- [x] Ruta `/admin/plan-catalog` registrada en App.tsx
+
+### 4.8 🔲 Deploy a Netlify
+- [x] archivo `_redirects` para SPA fallback
+- [ ] Setear environment variables en Netlify Dashboard (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_BACKEND_URL)
+- [ ] Redeploy forzado
+
 ### Refactors pendientes
 - [ ] `Routines.tsx` (1449 líneas) — dividir en componentes
 - [ ] `useAuth.ts` — unificar los 3 useEffects en uno

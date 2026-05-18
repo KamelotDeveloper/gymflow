@@ -316,7 +316,7 @@ export default function Exercises() {
                 {/* YouTube thumbnail overlay */}
                 {exercise.video_type === 'youtube' && getYouTubeVideoId(exercise.video_url) && (
                   <img
-                    src={`https://img.youtube.com/vi/${getYouTubeVideoId(exercise.video_url)}/hqdefault.jpg`}
+                    src={`https://img.youtube.com/vi/${getYouTubeVideoId(exercise.video_url)}/mqdefault.jpg`}
                     alt=""
                     style={{
                       position: 'absolute',
@@ -528,7 +528,7 @@ export default function Exercises() {
                     Preview:
                   </p>
                   <img
-                    src={`https://img.youtube.com/vi/${getYouTubeVideoId(formVideoUrl)}/hqdefault.jpg`}
+                    src={`https://img.youtube.com/vi/${getYouTubeVideoId(formVideoUrl)}/mqdefault.jpg`}
                     alt="Thumbnail preview"
                     style={{
                       width: '100%',

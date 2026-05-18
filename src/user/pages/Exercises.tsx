@@ -134,7 +134,7 @@ export default function Exercises() {
                   <div className="relative aspect-video bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
                     {videoId ? (
                       <img
-                        src={`https://img.youtube.com/vi/${videoId}/hqdefault.jpg`}
+                        src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`}
                         alt={exercise.name}
                         className="w-full h-full object-cover"
                         onError={(e) => {
