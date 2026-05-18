@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthContext } from '../../shared/components/AuthContext'
 import { supabase } from '../../shared/lib/supabase'
+import PaymentMethodSelector from '../../shared/components/PaymentMethodSelector'
 import UserLayout from '../../shared/components/UserLayout'
-import { ArrowLeft, Loader2, Star } from 'lucide-react'
+import { ArrowLeft, Loader2, Star, AlertCircle, CheckCircle2 } from 'lucide-react'
 
 type Membership = {
   id: string
@@ -21,22 +22,97 @@ type Plan = {
   price: number
 }
 
-const WHATSAPP_NUMBER = '5491112345678' // TODO: reemplazar con número real
-
 export default function Membresia() {
   const { profile } = useAuthContext()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   const [membership, setMembership] = useState<Membership | null>(null)
   const [loading, setLoading] = useState(true)
   const [plans, setPlans] = useState<Plan[]>([])
   const [plansLoading, setPlansLoading] = useState(true)
 
+  // Payment flow state
+  const [showPaymentSelector, setShowPaymentSelector] = useState(false)
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
+  const [pendingTransaction, setPendingTransaction] = useState<any | null>(null)
+  const [checkingMPReturn, setCheckingMPReturn] = useState(false)
+  const [mpReturnStatus, setMPReturnStatus] = useState<'success' | 'failure' | null>(null)
+
   useEffect(() => {
     if (!profile?.id) return
     fetchMembership()
     fetchPlans()
+    checkMPReturn()
+    checkPendingTransaction()
   }, [profile?.id])
+
+  // ── MP redirect return handling ──
+  const checkMPReturn = async () => {
+    const txnParam = searchParams.get('txn')
+    const errorParam = searchParams.get('error')
+
+    if (errorParam === 'mp_failure') {
+      setMPReturnStatus('failure')
+      setCheckingMPReturn(true)
+      // Clear the URL param after a moment
+      setTimeout(() => setCheckingMPReturn(false), 8000)
+      return
+    }
+
+    if (txnParam) {
+      setCheckingMPReturn(true)
+      try {
+        const { data } = await (supabase as any)
+          .from('payment_transactions')
+          .select('status')
+          .eq('id', txnParam)
+          .maybeSingle()
+
+        if (data?.status === 'confirmed') {
+          setMPReturnStatus('success')
+          // Refresh membership data
+          fetchMembership()
+        } else if (data?.status === 'pending') {
+          setMPReturnStatus('success')
+        } else if (data?.status === 'rejected') {
+          setMPReturnStatus('failure')
+        }
+      } catch {
+        // Ignore — user can check manually
+      } finally {
+        // Keep the banner visible for a while, then clear
+        setTimeout(() => {
+          setCheckingMPReturn(false)
+          setMPReturnStatus(null)
+        }, 10000)
+      }
+
+      // Clean URL params without reload
+      const cleanUrl = window.location.pathname
+      window.history.replaceState({}, '', cleanUrl)
+    }
+  }
+
+  // ── Check for pending transactions ──
+  const checkPendingTransaction = async () => {
+    try {
+      const { data } = await (supabase as any)
+        .from('payment_transactions')
+        .select('id, status, created_at')
+        .eq('profile_id', profile!.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (data) {
+        setPendingTransaction(data)
+      }
+    } catch {
+      // No pending transaction
+    }
+  }
 
   const fetchMembership = async () => {
     setLoading(true)
@@ -86,8 +162,17 @@ export default function Membresia() {
   const formatPrice = (price: number) =>
     new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(price)
 
-  const whatsappLink = (planName: string) =>
-    `https://wa.me/${WHATSAPP_NUMBER}?text=Hola, quiero renovar mi membresía plan ${planName}`
+  const handleSelectPlan = (plan: Plan) => {
+    setSelectedPlan(plan)
+    setShowPaymentSelector(true)
+  }
+
+  const handlePaymentComplete = () => {
+    setShowPaymentSelector(false)
+    setSelectedPlan(null)
+    checkPendingTransaction()
+    fetchMembership()
+  }
 
   const today = new Date()
   const getStatusInfo = () => {
@@ -129,10 +214,10 @@ export default function Membresia() {
         ) : !membership ? (
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 text-center">
             <p className="text-gray-500 dark:text-gray-400">
-              No tenés membresía registrada.
+              No tenés membresía activa.
             </p>
             <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
-              Contactá al gimnasio para obtener una.
+              Elegí un plan y método de pago para empezar a entrenar.
             </p>
           </div>
         ) : (
@@ -231,7 +316,7 @@ export default function Membresia() {
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
             {!membership || statusInfo.type === 'expired'
-              ? 'Elegí un plan para volver a entrenar'
+              ? 'Elegí un plan y un método de pago'
               : 'Consultá con el gimnasio para cambiar tu plan actual'}
           </p>
 
@@ -276,22 +361,72 @@ export default function Membresia() {
                       {formatPrice(plan.price)}
                     </p>
 
-                    <a
-                      href={whatsappLink(plan.name)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      // TODO: reemplazar con pasarela de pago (Mercado Pago u otra)
-                      className="block w-full text-center rounded-lg bg-[#DC2626] text-white text-sm font-bold py-2.5 hover:bg-[#b71c1c] transition-colors"
+                    <button
+                      onClick={() => handleSelectPlan(plan)}
+                      disabled={!!pendingTransaction}
+                      className="block w-full text-center rounded-lg bg-[#DC2626] text-white text-sm font-bold py-2.5 hover:bg-[#b71c1c] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      Consultar
-                    </a>
+                      Elegir método de pago
+                    </button>
                   </div>
                 )
               })}
             </div>
           )}
         </section>
+
+        {/* ── MP return status banner ── */}
+        {checkingMPReturn && mpReturnStatus === 'success' && (
+          <div className="mt-4 rounded-xl border border-green-700 bg-green-900/20 p-4 flex items-start gap-3">
+            <CheckCircle2 size={20} className="text-green-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-green-300">Pago recibido</p>
+              <p className="text-xs text-green-400/70 mt-0.5">
+                Tu pago se está procesando. Pronto tendrás tu membresía activa.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {checkingMPReturn && mpReturnStatus === 'failure' && (
+          <div className="mt-4 rounded-xl border border-red-700 bg-red-900/20 p-4 flex items-start gap-3">
+            <AlertCircle size={20} className="text-red-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-red-300">Pago no completado</p>
+              <p className="text-xs text-red-400/70 mt-0.5">
+                El pago no se pudo procesar. Elegí otro método o intentá de nuevo.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Pending transaction banner ── */}
+        {pendingTransaction && (
+          <div className="mt-4 rounded-xl border border-yellow-700 bg-yellow-900/20 p-4 flex items-start gap-3">
+            <AlertCircle size={20} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-yellow-300">Tenés un pago pendiente</p>
+              <p className="text-xs text-yellow-400/70 mt-0.5">
+                Esperá a que sea procesado por el administrador.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* ── Payment Method Selector Modal ── */}
+      {selectedPlan && (
+        <PaymentMethodSelector
+          open={showPaymentSelector}
+          onClose={() => {
+            setShowPaymentSelector(false)
+            setSelectedPlan(null)
+          }}
+          plan={selectedPlan}
+          profileId={profile!.id}
+          onComplete={handlePaymentComplete}
+        />
+      )}
     </UserLayout>
   )
 }
