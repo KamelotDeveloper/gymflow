@@ -481,20 +481,36 @@ export default function Routines() {
 
   // ── Render ──
 
+  // On mobile, decide which step to show
+  const mobileStep =
+    showTemplates
+      ? 'days'
+      : !selectedMemberId
+        ? 'members'
+        : selectedDay || selectedRoutine || showCreateForm
+          ? 'editor'
+          : 'days'
+
+  const showMembersColumn = !isMobile || mobileStep === 'members'
+  const showDaysColumn = !isMobile || mobileStep === 'days'
+  const showEditorColumn = !isMobile || mobileStep === 'editor'
+
   return (
     <AdminLayout pageTitle="Rutinas">
       <div
         style={{
           display: 'flex',
-          minHeight: '100%',
-          margin: '0 -24px',
-          alignItems: 'stretch',
+          flexDirection: isMobile ? 'column' : 'row',
+          minHeight: isMobile ? 'auto' : '100%',
+          margin: isMobile ? 0 : '0 -24px',
+          alignItems: isMobile ? 'stretch' : 'stretch',
         }}
       >
         {/* ── COLUMN 1: Members Sidebar ── */}
+        {showMembersColumn && (
         <div
           style={{
-            width: 220,
+            width: isMobile ? '100%' : 220,
             flexShrink: 0,
             backgroundColor: '#111',
             color: '#fff',
@@ -619,18 +635,45 @@ export default function Routines() {
             Plantillas
           </div>
         </div>
+        )}
 
         {/* ── COLUMN 2: Days / Templates ── */}
+        {showDaysColumn && (
         <div
           style={{
-            width: 200,
+            width: isMobile ? '100%' : 200,
             flexShrink: 0,
             backgroundColor: '#fff',
-            borderRight: '1px solid #e5e7eb',
+            borderRight: isMobile ? 'none' : '1px solid #e5e7eb',
           }}
         >
+          {isMobile && (selectedMemberId || showTemplates) && (
+            <div
+              onClick={() => {
+                setShowTemplates(false)
+                setSelectedMemberId(null)
+                setSelectedDay(null)
+                setSelectedRoutine(null)
+                setShowCreateForm(false)
+              }}
+              style={{
+                padding: '10px 16px',
+                cursor: 'pointer',
+                fontSize: 13,
+                color: '#DC2626',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                borderBottom: '1px solid #e5e7eb',
+              }}
+            >
+              ← {showTemplates ? 'Volver a miembros' : 'Cambiar miembro'}
+            </div>
+          )}
           {selectedMemberId && !showTemplates ? (
             <>
+              {!isMobile && (
               <div
                 style={{
                   fontWeight: 600,
@@ -642,6 +685,7 @@ export default function Routines() {
               >
                 {selectedMember?.full_name}
               </div>
+              )}
               <div>
                 {[1, 2, 3, 4, 5].map((day) => {
                   const routine = routinesByDay[day - 1]
@@ -824,16 +868,39 @@ export default function Routines() {
             </div>
           )}
         </div>
+        )}
 
         {/* ── COLUMN 3: Editor / Create ── */}
+        {showEditorColumn && (
         <div
           style={{
             flex: 1,
             backgroundColor: '#f9fafb',
-            padding: 24,
+            padding: isMobile ? 16 : 24,
             minWidth: 0,
           }}
         >
+          {isMobile && (selectedRoutine || showCreateForm) && (
+            <div
+              onClick={() => {
+                setSelectedRoutine(null)
+                setShowCreateForm(false)
+                setSelectedDay(null)
+              }}
+              style={{
+                cursor: 'pointer',
+                fontSize: 13,
+                color: '#DC2626',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                marginBottom: 12,
+              }}
+            >
+              ← Volver a días
+            </div>
+          )}
           {!selectedRoutine && !showCreateForm && (
             <div
               style={{
@@ -1501,6 +1568,7 @@ export default function Routines() {
             </div>
           )}
         </div>
+        )}
       </div>
     </AdminLayout>
   )
