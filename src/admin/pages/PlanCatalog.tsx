@@ -27,6 +27,7 @@ const INPUT_CLASS =
 export default function PlanCatalog() {
   const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   // Edit modal
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null)
@@ -40,6 +41,12 @@ export default function PlanCatalog() {
 
   useEffect(() => {
     fetchPlans()
+  }, [])
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
   }, [])
 
   const fetchPlans = async () => {
@@ -143,81 +150,154 @@ export default function PlanCatalog() {
 
   return (
     <AdminLayout pageTitle="Planes">
-      {/* Table */}
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-              <Th>Nombre</Th>
-              <Th>Precio</Th>
-              <Th>Duración</Th>
-              <Th>Estado</Th>
-              <Th style={{ width: 80 }}>Acciones</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={5} className="text-center py-16">
-                  <Loader2 size={24} className="animate-spin text-gray-400 mx-auto" />
-                </td>
-              </tr>
-            ) : plans.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="text-center py-16 text-sm text-gray-400">
-                  No hay planes creados aún.
-                </td>
-              </tr>
-            ) : (
-              plans.map((plan) => (
-                <tr key={plan.id} className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/20">
-                  <Td>
-                    <span className={plan.is_active ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500 line-through'}>
-                      {plan.name}
-                    </span>
-                  </Td>
-                  <Td>
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      {formatPrice(plan.price)}
-                    </span>
-                  </Td>
-                  <Td>
-                    <span className="text-gray-600 dark:text-gray-300">
-                      {plan.duration_months} mes{plan.duration_months !== 1 ? 'es' : ''}
-                    </span>
-                    <span className="text-gray-400 dark:text-gray-500 text-xs ml-1">
-                      ({durationLabels[plan.duration_type]})
-                    </span>
-                  </Td>
-                  <Td>
-                    <button
-                      onClick={() => toggleActive(plan)}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-colors cursor-pointer ${
-                        plan.is_active
-                          ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      {plan.is_active ? 'Activo' : 'Inactivo'}
-                    </button>
-                  </Td>
-                  <Td>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => openEditModal(plan)}
-                        className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-                        title="Editar plan"
+      {plans.length === 0 && !loading ? (
+        <div
+          style={{
+            backgroundColor: '#fff', borderRadius: 12, border: '1px solid #e5e7eb',
+            textAlign: 'center', padding: '48px 16px', color: '#6b7280', fontSize: 14,
+          }}
+        >
+          No hay planes creados aún.
+        </div>
+      ) : isMobile ? (
+        /* ── Mobile cards ── */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {loading
+            ? [1, 2, 3, 4, 5].map((i) => <MobilePlanCardSkeleton key={i} />)
+            : plans.map((plan) => (
+                <div
+                  key={plan.id}
+                  style={{
+                    backgroundColor: '#fff', borderRadius: 12, border: '1px solid #e5e7eb',
+                    padding: 16, display: 'flex', flexDirection: 'column', gap: 8,
+                  }}
+                >
+                  {/* Header row: name + edit button */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div
+                        style={{
+                          fontWeight: 600, fontSize: 15,
+                          color: plan.is_active ? '#111' : '#9ca3af',
+                          textDecoration: plan.is_active ? 'none' : 'line-through',
+                        }}
                       >
-                        <Pencil size={15} />
-                      </button>
+                        {plan.name}
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#111', marginTop: 2 }}>
+                        {formatPrice(plan.price)}
+                      </div>
                     </div>
-                  </Td>
+                    <button
+                      onClick={() => openEditModal(plan)}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        padding: 6, display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', color: '#6b7280', borderRadius: 6,
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f3f4f6')}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      title="Editar plan"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                  </div>
+
+                  {/* Duration */}
+                  <div style={{ fontSize: 13, color: '#6b7280' }}>
+                    {plan.duration_months} mes{plan.duration_months !== 1 ? 'es' : ''}{' '}
+                    <span style={{ color: '#9ca3af' }}>({durationLabels[plan.duration_type]})</span>
+                  </div>
+
+                  {/* Status toggle */}
+                  <button
+                    onClick={() => toggleActive(plan)}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '4px 10px', borderRadius: 999, fontSize: 12,
+                      fontWeight: 600, border: '1px solid', cursor: 'pointer',
+                      alignSelf: 'flex-start',
+                      backgroundColor: plan.is_active ? '#f0fdf4' : '#f3f4f6',
+                      color: plan.is_active ? '#15803d' : '#6b7280',
+                      borderColor: plan.is_active ? '#bbf7d0' : '#e5e7eb',
+                    }}
+                  >
+                    {plan.is_active ? 'Activo' : 'Inactivo'}
+                  </button>
+                </div>
+              ))}
+        </div>
+      ) : (
+        /* ── Desktop table ── */
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                <Th>Nombre</Th>
+                <Th>Precio</Th>
+                <Th>Duración</Th>
+                <Th>Estado</Th>
+                <Th style={{ width: 80 }}>Acciones</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="text-center py-16">
+                    <Loader2 size={24} className="animate-spin text-gray-400 mx-auto" />
+                  </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : (
+                plans.map((plan) => (
+                  <tr key={plan.id} className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/20">
+                    <Td>
+                      <span className={plan.is_active ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500 line-through'}>
+                        {plan.name}
+                      </span>
+                    </Td>
+                    <Td>
+                      <span className="font-semibold text-gray-900 dark:text-white">
+                        {formatPrice(plan.price)}
+                      </span>
+                    </Td>
+                    <Td>
+                      <span className="text-gray-600 dark:text-gray-300">
+                        {plan.duration_months} mes{plan.duration_months !== 1 ? 'es' : ''}
+                      </span>
+                      <span className="text-gray-400 dark:text-gray-500 text-xs ml-1">
+                        ({durationLabels[plan.duration_type]})
+                      </span>
+                    </Td>
+                    <Td>
+                      <button
+                        onClick={() => toggleActive(plan)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-colors cursor-pointer ${
+                          plan.is_active
+                            ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        {plan.is_active ? 'Activo' : 'Inactivo'}
+                      </button>
+                    </Td>
+                    <Td>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => openEditModal(plan)}
+                          className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                          title="Editar plan"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                      </div>
+                    </Td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {editingPlan && (
@@ -361,4 +441,20 @@ function Th({ children, style }: { children: React.ReactNode; style?: React.CSSP
 
 function Td({ children }: { children: React.ReactNode }) {
   return <td style={{ padding: '12px 16px', fontSize: 14 }}>{children}</td>
+}
+
+function MobilePlanCardSkeleton() {
+  return (
+    <div
+      style={{
+        backgroundColor: '#fff', borderRadius: 12, border: '1px solid #e5e7eb',
+        padding: 16, display: 'flex', flexDirection: 'column', gap: 8,
+      }}
+    >
+      <div className="animate-pulse" style={{ height: 14, width: '50%', backgroundColor: '#e5e7eb', borderRadius: 4 }} />
+      <div className="animate-pulse" style={{ height: 14, width: '30%', backgroundColor: '#e5e7eb', borderRadius: 4 }} />
+      <div className="animate-pulse" style={{ height: 12, width: '40%', backgroundColor: '#e5e7eb', borderRadius: 4 }} />
+      <div className="animate-pulse" style={{ height: 22, width: 70, backgroundColor: '#e5e7eb', borderRadius: 999 }} />
+    </div>
+  )
 }

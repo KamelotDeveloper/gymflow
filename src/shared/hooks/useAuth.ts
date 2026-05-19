@@ -51,6 +51,9 @@ export function useAuth() {
           })
         }
       })
+      .catch((err) => {
+        console.error('Error fetching profile:', err)
+      })
   }, [user])
 
   const signIn = async (email: string, password: string) => {

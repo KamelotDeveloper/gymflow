@@ -22,6 +22,8 @@ function formatDate(dateStr: string): string {
 }
 
 export default function Plans() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
   // Data
   const [memberships, setMemberships] = useState<any[]>([])
   const [profiles, setProfiles] = useState<any[]>([])
@@ -44,6 +46,12 @@ export default function Plans() {
   const [formOverrideReason, setFormOverrideReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     fetchAll()
@@ -243,6 +251,20 @@ export default function Plans() {
     pending: 'bg-gray-100 text-gray-600',
   }
 
+  const statusBgColors: Record<string, string> = {
+    active: '#dcfce7',
+    expired: '#fee2e2',
+    suspended: '#fef9c3',
+    pending: '#f3f4f6',
+  }
+
+  const statusTextColors: Record<string, string> = {
+    active: '#166534',
+    expired: '#991b1b',
+    suspended: '#854d0e',
+    pending: '#4b5563',
+  }
+
   // Check if a member already has any active membership
   const memberHasActive = (profileId: string): boolean => {
     return memberships.some(
@@ -256,7 +278,8 @@ export default function Plans() {
       <div
         style={{
           display: 'flex',
-          gap: 16,
+          flexDirection: isMobile ? 'column' : 'row',
+          gap: 12,
           marginBottom: 24,
         }}
       >
@@ -316,12 +339,18 @@ export default function Plans() {
           </div>
         </div>
 
-        {/* Spacer + button */}
-        <div style={{ flex: 1 }} />
+        {/* Spacer — hidden on mobile */}
+        {!isMobile && <div style={{ flex: 1 }} />}
+
+        {/* Button */}
         <div style={{ display: 'flex', alignItems: 'flex-end' }}>
           <button
             onClick={() => openCreateModal()}
-            style={btnPrimaryStyle}
+            style={{
+              ...btnPrimaryStyle,
+              width: isMobile ? '100%' : undefined,
+              justifyContent: isMobile ? 'center' : undefined,
+            }}
           >
             <Plus size={18} />
             Nueva membresía
@@ -329,82 +358,79 @@ export default function Plans() {
         </div>
       </div>
 
-      {/* ── Table ── */}
-      <div style={cardStyle}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr
-              style={{
-                borderBottom: '1px solid #e5e7eb',
-                backgroundColor: '#f9fafb',
-              }}
-            >
-              <Th>Miembro</Th>
-              <Th>Plan</Th>
-              <Th>Inicio</Th>
-              <Th>Vence</Th>
-              <Th>Estado</Th>
-              <Th>Override</Th>
-              <Th style={{ width: 80 }}>Acciones</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <>
-                <SkeletonRow />
-                <SkeletonRow />
-                <SkeletonRow />
-                <SkeletonRow />
-                <SkeletonRow />
-              </>
-            ) : memberships.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={7}
+      {/* ── Desktop table / Mobile cards ── */}
+      {memberships.length === 0 && !loading ? (
+        <div
+          style={{
+            backgroundColor: '#fff',
+            borderRadius: 12,
+            border: '1px solid #e5e7eb',
+            textAlign: 'center',
+            padding: '48px 16px',
+            color: '#6b7280',
+            fontSize: 14,
+          }}
+        >
+          No hay membresías registradas aún.
+        </div>
+      ) : isMobile ? (
+        /* ── Mobile cards ── */
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            marginBottom: 24,
+          }}
+        >
+          {loading
+            ? [1, 2, 3, 4, 5].map((i) => (
+                <MobilePlanCardSkeleton key={i} />
+              ))
+            : memberships.map((mem) => (
+                <div
+                  key={mem.id}
                   style={{
-                    textAlign: 'center',
-                    padding: '48px 16px',
-                    color: '#6b7280',
-                    fontSize: 14,
+                    backgroundColor: '#fff',
+                    borderRadius: 12,
+                    border: '1px solid #e5e7eb',
+                    padding: 16,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
                   }}
                 >
-                  No hay membresías registradas aún.
-                </td>
-              </tr>
-            ) : (
-              memberships.map((mem) => (
-                <tr
-                  key={mem.id}
-                  style={{ borderBottom: '1px solid #e5e7eb' }}
-                >
-                  <Td>{mem.profile?.full_name ?? '-'}</Td>
-                  <Td>{mem.plan?.name ?? '-'}</Td>
-                  <Td>{formatDate(mem.start_date)}</Td>
-                  <Td>{formatDate(mem.end_date)}</Td>
-                  <Td>
-                    <span
-                      className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusColors[mem.status] ?? statusColors.pending}`}
-                    >
-                      {statusLabels[mem.status] ?? mem.status}
-                    </span>
-                  </Td>
-                  <Td>
-                    {mem.admin_override ? (
-                      <span
+                  {/* Header: name + plan + actions */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                    }}
+                  >
+                    <div>
+                      <div
                         style={{
-                          color: '#f59e0b',
                           fontWeight: 600,
-                          fontSize: 13,
+                          fontSize: 15,
+                          color: '#111',
                         }}
                       >
-                        Sí
-                      </span>
-                    ) : (
-                      <span style={{ color: '#9ca3af' }}>-</span>
-                    )}
-                  </Td>
-                  <Td>
-                    <div style={{ display: 'flex', gap: 4 }}>
+                        {mem.profile?.full_name ?? '-'}
+                      </div>
+                      <div
+                        style={{ fontSize: 13, color: '#6b7280' }}
+                      >
+                        {mem.plan?.name ?? '-'}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 4,
+                        flexShrink: 0,
+                      }}
+                    >
                       <IconButton
                         onClick={() => openEditModal(mem)}
                         title="Editar"
@@ -422,13 +448,167 @@ export default function Plans() {
                         </IconButton>
                       )}
                     </div>
-                  </Td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                  </div>
+
+                  {/* Inicio */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <span style={{ fontSize: 12, color: '#9ca3af' }}>
+                      Inicio
+                    </span>
+                    <span style={{ fontSize: 13, color: '#111' }}>
+                      {formatDate(mem.start_date)}
+                    </span>
+                  </div>
+
+                  {/* Vence */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <span style={{ fontSize: 12, color: '#9ca3af' }}>
+                      Vence
+                    </span>
+                    <span style={{ fontSize: 13, color: '#111' }}>
+                      {formatDate(mem.end_date)}
+                    </span>
+                  </div>
+
+                  {/* Status + override */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginTop: 4,
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '2px 10px',
+                        borderRadius: 999,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        backgroundColor:
+                          statusBgColors[mem.status] ?? '#f3f4f6',
+                        color:
+                          statusTextColors[mem.status] ?? '#4b5563',
+                      }}
+                    >
+                      {statusLabels[mem.status] ?? mem.status}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 13,
+                        color: mem.admin_override
+                          ? '#f59e0b'
+                          : '#9ca3af',
+                        fontWeight: mem.admin_override ? 600 : 400,
+                      }}
+                    >
+                      {mem.admin_override
+                        ? 'Override: Sí'
+                        : 'Override: No'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+        </div>
+      ) : (
+        /* ── Desktop table ── */
+        <div style={cardStyle}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr
+                style={{
+                  borderBottom: '1px solid #e5e7eb',
+                  backgroundColor: '#f9fafb',
+                }}
+              >
+                <Th>Miembro</Th>
+                <Th>Plan</Th>
+                <Th>Inicio</Th>
+                <Th>Vence</Th>
+                <Th>Estado</Th>
+                <Th>Override</Th>
+                <Th style={{ width: 80 }}>Acciones</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <>
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                </>
+              ) : (
+                memberships.map((mem) => (
+                  <tr
+                    key={mem.id}
+                    style={{ borderBottom: '1px solid #e5e7eb' }}
+                  >
+                    <Td>{mem.profile?.full_name ?? '-'}</Td>
+                    <Td>{mem.plan?.name ?? '-'}</Td>
+                    <Td>{formatDate(mem.start_date)}</Td>
+                    <Td>{formatDate(mem.end_date)}</Td>
+                    <Td>
+                      <span
+                        className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusColors[mem.status] ?? statusColors.pending}`}
+                      >
+                        {statusLabels[mem.status] ?? mem.status}
+                      </span>
+                    </Td>
+                    <Td>
+                      {mem.admin_override ? (
+                        <span
+                          style={{
+                            color: '#f59e0b',
+                            fontWeight: 600,
+                            fontSize: 13,
+                          }}
+                        >
+                          Sí
+                        </span>
+                      ) : (
+                        <span style={{ color: '#9ca3af' }}>-</span>
+                      )}
+                    </Td>
+                    <Td>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <IconButton
+                          onClick={() => openEditModal(mem)}
+                          title="Editar"
+                        >
+                          <Settings2 size={16} />
+                        </IconButton>
+                        {!memberHasActive(mem.profile_id) && (
+                          <IconButton
+                            onClick={() =>
+                              openCreateModal(mem.profile_id)
+                            }
+                            title="Asignar nueva membresía"
+                          >
+                            <Plus size={16} />
+                          </IconButton>
+                        )}
+                      </div>
+                    </Td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* ── Create Modal ── */}
       {modalMode === 'create' && (
@@ -973,5 +1153,67 @@ function SkeletonRow() {
         </td>
       ))}
     </tr>
+  )
+}
+
+function MobilePlanCardSkeleton() {
+  return (
+    <div
+      style={{
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        border: '1px solid #e5e7eb',
+        padding: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <div
+        className="animate-pulse"
+        style={{
+          height: 14,
+          width: '60%',
+          backgroundColor: '#e5e7eb',
+          borderRadius: 4,
+        }}
+      />
+      <div
+        className="animate-pulse"
+        style={{
+          height: 14,
+          width: '40%',
+          backgroundColor: '#e5e7eb',
+          borderRadius: 4,
+        }}
+      />
+      <div
+        className="animate-pulse"
+        style={{
+          height: 14,
+          width: '45%',
+          backgroundColor: '#e5e7eb',
+          borderRadius: 4,
+        }}
+      />
+      <div
+        className="animate-pulse"
+        style={{
+          height: 14,
+          width: '35%',
+          backgroundColor: '#e5e7eb',
+          borderRadius: 4,
+        }}
+      />
+      <div
+        className="animate-pulse"
+        style={{
+          height: 14,
+          width: '25%',
+          backgroundColor: '#e5e7eb',
+          borderRadius: 4,
+        }}
+      />
+    </div>
   )
 }

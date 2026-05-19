@@ -68,6 +68,7 @@ export default function Routines() {
   const [selectedRoutine, setSelectedRoutine] = useState<Routine | null>(null)
   const [routineExercises, setRoutineExercises] = useState<RoutineExercise[]>([])
   const [exercisesLoading, setExercisesLoading] = useState(false)
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   // ── Create form ──
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -80,6 +81,12 @@ export default function Routines() {
 
   useEffect(() => {
     fetchMembers()
+  }, [])
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
   }, [])
 
   useEffect(() => {
@@ -1026,11 +1033,19 @@ export default function Routines() {
               {/* Exercises section */}
               <div style={{ marginTop: 16 }}>
                 {exercisesLoading ? (
-                  <div style={cardStyle}>
-                    <SkeletonExerciseRow />
-                    <SkeletonExerciseRow />
-                    <SkeletonExerciseRow />
-                  </div>
+                  isMobile ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <SkeletonExerciseCard />
+                      <SkeletonExerciseCard />
+                      <SkeletonExerciseCard />
+                    </div>
+                  ) : (
+                    <div style={cardStyle}>
+                      <SkeletonExerciseRow />
+                      <SkeletonExerciseRow />
+                      <SkeletonExerciseRow />
+                    </div>
+                  )
                 ) : routineExercises.length === 0 ? (
                   <div
                     style={{
@@ -1045,6 +1060,240 @@ export default function Routines() {
                       Esta rutina no tiene ejercicios. Agregá el primero con el
                       botón de abajo.
                     </p>
+                  </div>
+                ) : isMobile ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {routineExercises.map((re) => (
+                      <div
+                        key={re.id}
+                        style={{
+                          backgroundColor: '#fff',
+                          borderRadius: 12,
+                          border: '1px solid #e5e7eb',
+                          padding: 16,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 10,
+                        }}
+                      >
+                        {/* Header: order + delete */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: '#6b7280',
+                            }}
+                          >
+                            #{re.order_index}
+                          </span>
+                          <IconButton
+                            onClick={() => handleDeleteExercise(re)}
+                            title="Eliminar"
+                            style={{ color: '#DC2626' }}
+                          >
+                            <Trash2 size={16} />
+                          </IconButton>
+                        </div>
+
+                        {/* Exercise name */}
+                        <input
+                          type="text"
+                          value={re.exercise.name}
+                          onChange={(e) =>
+                            updateExerciseExerciseField(
+                              re.id,
+                              'name',
+                              e.target.value,
+                            )
+                          }
+                          onBlur={() => handleExerciseNameBlur(re)}
+                          style={inlineInputStyle}
+                        />
+
+                        {/* 2x2 grid for numeric fields */}
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr',
+                            gap: 8,
+                          }}
+                        >
+                          <div>
+                            <label
+                              style={{
+                                ...labelStyle,
+                                marginBottom: 2,
+                                fontSize: 12,
+                              }}
+                            >
+                              Series
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={re.sets}
+                              onChange={(e) =>
+                                updateExerciseField(
+                                  re.id,
+                                  'sets',
+                                  Number(e.target.value),
+                                )
+                              }
+                              onBlur={() => saveRoutineExerciseRow(re)}
+                              style={{
+                                ...inlineInputStyle,
+                                textAlign: 'center',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                ...labelStyle,
+                                marginBottom: 2,
+                                fontSize: 12,
+                              }}
+                            >
+                              Reps
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={re.reps}
+                              onChange={(e) =>
+                                updateExerciseField(
+                                  re.id,
+                                  'reps',
+                                  Number(e.target.value),
+                                )
+                              }
+                              onBlur={() => saveRoutineExerciseRow(re)}
+                              style={{
+                                ...inlineInputStyle,
+                                textAlign: 'center',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                ...labelStyle,
+                                marginBottom: 2,
+                                fontSize: 12,
+                              }}
+                            >
+                              Peso (kg)
+                            </label>
+                            <input
+                              type="number"
+                              step={0.5}
+                              min={0}
+                              value={re.weight_kg}
+                              onChange={(e) =>
+                                updateExerciseField(
+                                  re.id,
+                                  'weight_kg',
+                                  Number(e.target.value),
+                                )
+                              }
+                              onBlur={() => saveRoutineExerciseRow(re)}
+                              style={{
+                                ...inlineInputStyle,
+                                textAlign: 'center',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                ...labelStyle,
+                                marginBottom: 2,
+                                fontSize: 12,
+                              }}
+                            >
+                              Descanso (seg)
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={re.rest_seconds}
+                              onChange={(e) =>
+                                updateExerciseField(
+                                  re.id,
+                                  'rest_seconds',
+                                  Number(e.target.value),
+                                )
+                              }
+                              onBlur={() => saveRoutineExerciseRow(re)}
+                              style={{
+                                ...inlineInputStyle,
+                                textAlign: 'center',
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Video */}
+                        <div>
+                          <label
+                            style={{
+                              ...labelStyle,
+                              marginBottom: 2,
+                              fontSize: 12,
+                            }}
+                          >
+                            Video
+                          </label>
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            <input
+                              type="text"
+                              value={re.exercise.video_url}
+                              onChange={(e) =>
+                                updateExerciseExerciseField(
+                                  re.id,
+                                  'video_url',
+                                  e.target.value,
+                                )
+                              }
+                              onBlur={() => handleExerciseVideoBlur(re)}
+                              style={{
+                                ...inlineInputStyle,
+                                flex: 1,
+                                minWidth: 120,
+                              }}
+                            />
+                            {re.exercise.video_url && (
+                              <a
+                                href={re.exercise.video_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  color: '#6b7280',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <ExternalLink size={14} />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <div style={cardStyle}>
@@ -1444,6 +1693,92 @@ function SkeletonExerciseRow() {
           }}
         />
       ))}
+    </div>
+  )
+}
+
+function SkeletonExerciseCard() {
+  return (
+    <div
+      className="animate-pulse"
+      style={{
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        border: '1px solid #e5e7eb',
+        padding: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <div
+          style={{
+            height: 14,
+            width: 30,
+            backgroundColor: '#e5e7eb',
+            borderRadius: 4,
+          }}
+        />
+        <div
+          style={{
+            height: 14,
+            width: 20,
+            backgroundColor: '#e5e7eb',
+            borderRadius: 4,
+          }}
+        />
+      </div>
+      <div
+        style={{
+          height: 32,
+          backgroundColor: '#e5e7eb',
+          borderRadius: 6,
+        }}
+      />
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 8,
+        }}
+      >
+        <div
+          style={{
+            height: 56,
+            backgroundColor: '#e5e7eb',
+            borderRadius: 6,
+          }}
+        />
+        <div
+          style={{
+            height: 56,
+            backgroundColor: '#e5e7eb',
+            borderRadius: 6,
+          }}
+        />
+        <div
+          style={{
+            height: 56,
+            backgroundColor: '#e5e7eb',
+            borderRadius: 6,
+          }}
+        />
+        <div
+          style={{
+            height: 56,
+            backgroundColor: '#e5e7eb',
+            borderRadius: 6,
+          }}
+        />
+      </div>
+      <div
+        style={{
+          height: 32,
+          backgroundColor: '#e5e7eb',
+          borderRadius: 6,
+        }}
+      />
     </div>
   )
 }

@@ -35,12 +35,22 @@ export default function Login() {
     return () => window.removeEventListener('beforeinstallprompt', handler)
   }, [])
 
-  // Redirect si ya está autenticado
+  // Redirect si ya está autenticado (espera perfil hasta ~3s, sino redirige igual)
   useEffect(() => {
-    if (user && profile) {
+    if (!user) return
+
+    if (profile) {
       const target = profile.role === 'admin' ? '/admin/dashboard' : '/user'
       navigate(target, { replace: true })
+      return
     }
+
+    // Si user existe pero profile todavía no cargó, esperamos un tope
+    const timer = setTimeout(() => {
+      navigate('/user', { replace: true })
+    }, 3000)
+
+    return () => clearTimeout(timer)
   }, [user, profile, navigate])
 
   const handleLogin = async (e: React.FormEvent) => {

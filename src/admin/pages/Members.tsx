@@ -13,6 +13,7 @@ type Member = {
 }
 
 export default function Members() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -24,6 +25,12 @@ export default function Members() {
   const [formPassword, setFormPassword] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     fetchMembers()
@@ -182,13 +189,14 @@ export default function Members() {
       <div
         style={{
           display: 'flex',
-          alignItems: 'center',
-          gap: 16,
+          flexDirection: isMobile ? 'column' : 'row',
+          alignItems: isMobile ? 'stretch' : 'center',
+          gap: 12,
           marginBottom: 24,
         }}
       >
         {/* Search */}
-        <div style={{ position: 'relative', flex: 1, maxWidth: 360 }}>
+        <div style={{ position: 'relative', flex: 1, maxWidth: isMobile ? '100%' : 360 }}>
           <Search
             size={18}
             style={{
@@ -202,7 +210,7 @@ export default function Members() {
           />
           <input
             type="text"
-            placeholder="Buscar por nombre o email..."
+            placeholder="Buscar..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={inputStyle}
@@ -211,93 +219,111 @@ export default function Members() {
           />
         </div>
 
-        <button onClick={openCreateModal} style={btnPrimaryStyle}>
+        <button onClick={openCreateModal} style={{ ...btnPrimaryStyle, justifyContent: 'center' }}>
           <UserPlus size={18} />
           Nuevo miembro
         </button>
       </div>
 
-      {/* ── Table ── */}
-      <div style={cardStyle}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#f9fafb' }}>
-              <Th>Nombre</Th>
-              <Th>Email</Th>
-              <Th>Teléfono</Th>
-              <Th>Fecha de alta</Th>
-              <Th style={{ width: 80 }}>Acciones</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <>
-                <SkeletonRow />
-                <SkeletonRow />
-                <SkeletonRow />
-                <SkeletonRow />
-                <SkeletonRow />
-              </>
-            ) : filteredMembers.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={5}
+      {/* ── Desktop table / Mobile cards ── */}
+      {filteredMembers.length === 0 && !loading ? (
+        <div
+          style={{
+            backgroundColor: '#fff', borderRadius: 12, border: '1px solid #e5e7eb',
+            textAlign: 'center', padding: '48px 16px', color: '#6b7280', fontSize: 14,
+          }}
+        >
+          {searchQuery.trim()
+            ? 'No se encontraron miembros con ese criterio.'
+            : 'No hay miembros registrados aún.'}
+        </div>
+      ) : isMobile ? (
+        /* ── Mobile cards ── */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {loading
+            ? [1, 2, 3, 4, 5].map((i) => <MobileMemberCardSkeleton key={i} />)
+            : filteredMembers.map((member) => (
+                <div
+                  key={member.id}
                   style={{
-                    textAlign: 'center',
-                    padding: '48px 16px',
-                    color: '#6b7280',
-                    fontSize: 14,
+                    backgroundColor: '#fff', borderRadius: 12, border: '1px solid #e5e7eb',
+                    padding: 16, display: 'flex', flexDirection: 'column', gap: 8,
                   }}
                 >
-                  {searchQuery.trim()
-                    ? 'No se encontraron miembros con ese criterio.'
-                    : 'No hay miembros registrados aún.'}
-                </td>
-              </tr>
-            ) : (
-              filteredMembers.map((member) => (
-                <tr
-                  key={member.id}
-                  style={{ borderBottom: '1px solid #e5e7eb' }}
-                >
-                  <Td>{member.full_name}</Td>
-                  <Td>
-                    <span style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: 13 }}>
-                      -
-                    </span>
-                    {/* TODO: email disponible vía auth.admin API solo desde backend seguro */}
-                  </Td>
-                  <Td>{member.phone ?? '-'}</Td>
-                  <Td>
-                    {new Date(member.created_at).toLocaleDateString('es-ES', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric',
-                    })}
-                  </Td>
-                  <Td>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 15, color: '#111' }}>{member.full_name}</div>
+                      <div style={{ fontSize: 13, color: '#9ca3af' }}>{member.phone ?? 'Sin teléfono'}</div>
+                    </div>
                     <div style={{ display: 'flex', gap: 4 }}>
-                      <IconButton
-                        onClick={() => openEditModal(member)}
-                        title="Editar"
-                      >
+                      <IconButton onClick={() => openEditModal(member)} title="Editar">
                         <Pencil size={16} />
                       </IconButton>
-                      <IconButton
-                        onClick={() => handleDelete(member)}
-                        title="Eliminar"
-                        style={{ color: '#DC2626' }}
-                      >
+                      <IconButton onClick={() => handleDelete(member)} title="Eliminar" style={{ color: '#DC2626' }}>
                         <Trash2 size={16} />
                       </IconButton>
                     </div>
-                  </Td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#9ca3af' }}>
+                    Alta: {new Date(member.created_at).toLocaleDateString('es-ES', {
+                      day: '2-digit', month: '2-digit', year: 'numeric',
+                    })}
+                  </div>
+                </div>
+              ))}
+        </div>
+      ) : (
+        /* ── Desktop table ── */
+        <div style={cardStyle}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#f9fafb' }}>
+                <Th>Nombre</Th>
+                <Th>Email</Th>
+                <Th>Teléfono</Th>
+                <Th>Fecha de alta</Th>
+                <Th style={{ width: 80 }}>Acciones</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <>
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                </>
+              ) : (
+                filteredMembers.map((member) => (
+                  <tr key={member.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                    <Td>{member.full_name}</Td>
+                    <Td>
+                      <span style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: 13 }}>-</span>
+                    </Td>
+                    <Td>{member.phone ?? '-'}</Td>
+                    <Td>
+                      {new Date(member.created_at).toLocaleDateString('es-ES', {
+                        day: '2-digit', month: '2-digit', year: 'numeric',
+                      })}
+                    </Td>
+                    <Td>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <IconButton onClick={() => openEditModal(member)} title="Editar">
+                          <Pencil size={16} />
+                        </IconButton>
+                        <IconButton onClick={() => handleDelete(member)} title="Eliminar" style={{ color: '#DC2626' }}>
+                          <Trash2 size={16} />
+                        </IconButton>
+                      </div>
+                    </Td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* ── Modal ── */}
       {modalMode && (
@@ -587,6 +613,19 @@ function IconButton({
     >
       {children}
     </button>
+  )
+}
+
+function MobileMemberCardSkeleton() {
+  return (
+    <div style={{
+      backgroundColor: '#fff', borderRadius: 12, border: '1px solid #e5e7eb',
+      padding: 16, display: 'flex', flexDirection: 'column', gap: 8,
+    }}>
+      <div className="animate-pulse" style={{ height: 14, width: '60%', backgroundColor: '#e5e7eb', borderRadius: 4 }} />
+      <div className="animate-pulse" style={{ height: 14, width: '40%', backgroundColor: '#e5e7eb', borderRadius: 4 }} />
+      <div className="animate-pulse" style={{ height: 12, width: '30%', backgroundColor: '#e5e7eb', borderRadius: 4 }} />
+    </div>
   )
 }
 
