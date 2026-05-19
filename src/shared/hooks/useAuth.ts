@@ -42,7 +42,11 @@ export function useAuth() {
       .select('id, role, full_name')
       .eq('id', user.id)
       .single()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('Error fetching profile:', error)
+          return
+        }
         if (data) {
           setProfile({
             id: data.id,
@@ -50,9 +54,6 @@ export function useAuth() {
             full_name: data.full_name,
           })
         }
-      })
-      .catch((err) => {
-        console.error('Error fetching profile:', err)
       })
   }, [user])
 
