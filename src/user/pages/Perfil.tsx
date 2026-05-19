@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuthContext } from '../../shared/components/AuthContext'
 import { supabase } from '../../shared/lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Shield, Mail, Home } from 'lucide-react'
+import { ArrowLeft, Shield, Mail, Home, Trash2 } from 'lucide-react'
 
 export default function UserPerfil() {
   const { profile, user } = useAuthContext()
@@ -13,6 +13,14 @@ export default function UserPerfil() {
   const [pwSaving, setPwSaving] = useState(false)
   const [pwError, setPwError] = useState<string | null>(null)
   const [pwSuccess, setPwSuccess] = useState(false)
+  const [isInstalled, setIsInstalled] = useState(false)
+  const [showUninstallTip, setShowUninstallTip] = useState(false)
+
+  useEffect(() => {
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsInstalled(true)
+    }
+  }, [])
 
   const handleChangePassword = async () => {
     setPwError(null)
@@ -148,6 +156,43 @@ export default function UserPerfil() {
         <Home size={18} />
         Volver al inicio
       </button>
+
+      {/* Desinstalar app — solo si está instalada como PWA */}
+      {isInstalled && (
+        <div className="text-center pt-2">
+          <button
+            onClick={() => setShowUninstallTip(!showUninstallTip)}
+            className="inline-flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-400 transition-colors"
+          >
+            <Trash2 size={12} />
+            Desinstalar app
+          </button>
+
+          {showUninstallTip && (
+            <div className="mt-3 bg-[#1a1a1a] rounded-xl p-4 text-left text-xs text-gray-400 space-y-2">
+              <p className="font-medium text-gray-300">Para desinstalar:</p>
+              {navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad') ? (
+                <>
+                  <p>1. Abrí Safari</p>
+                  <p>2. Tocá el botón <strong>Compartir</strong> (cuadro con flecha arriba)</p>
+                  <p>3. Desplazate abajo y tocá <strong>Eliminar "GymFlow"</strong></p>
+                </>
+              ) : navigator.userAgent.includes('Android') ? (
+                <>
+                  <p>1. Mantené presionado el ícono de GymFlow</p>
+                  <p>2. Tocá <strong>Desinstalar</strong></p>
+                </>
+              ) : (
+                <>
+                  <p>1. Abrí Chrome y andá a <span className="text-gray-300">chrome://apps</span></p>
+                  <p>2. Click derecho en GymFlow → <strong>Remove from Chrome</strong></p>
+                  <p>O: abrí la app, 3 puntitos → <strong>Uninstall GymFlow</strong></p>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
