@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthContext } from '../shared/components/AuthContext'
-import { Download, Smartphone, Shield } from 'lucide-react'
+import { Download } from 'lucide-react'
 
 export default function Login() {
   const [tab, setTab] = useState<'login' | 'register'>('login')
@@ -99,34 +99,23 @@ export default function Login() {
         </div>
 
         <h1 className="text-3xl font-bold text-white mb-2">GymFlow</h1>
-        <p className="text-gray-400 mb-8 max-w-xs">
-          Instalá la app para llevar tu entrenamiento siempre con vos
+        <p className="text-gray-400 mb-10 max-w-xs">
+          Elegí cómo querés usar la app
         </p>
-
-        <div className="space-y-3 w-full max-w-xs mb-8">
-          <div className="flex items-center gap-3 bg-[#1a1a1a] rounded-xl p-4 text-left">
-            <Smartphone size={20} className="text-[#DC2626] shrink-0" />
-            <p className="text-sm text-gray-300">Sin navegador, como una app nativa</p>
-          </div>
-          <div className="flex items-center gap-3 bg-[#1a1a1a] rounded-xl p-4 text-left">
-            <Shield size={20} className="text-[#DC2626] shrink-0" />
-            <p className="text-sm text-gray-300">Acceso rápido desde tu pantalla de inicio</p>
-          </div>
-        </div>
 
         <button
           onClick={handleInstall}
           className="flex items-center justify-center gap-2 w-full max-w-xs rounded-xl bg-[#DC2626] px-6 py-3.5 text-base font-bold text-white hover:bg-red-700 transition-colors"
         >
           <Download size={20} />
-          Instalar app
+          Descargar
         </button>
 
         <button
           onClick={() => setShowLogin(true)}
-          className="mt-4 text-sm text-gray-500 hover:text-gray-300 transition-colors"
+          className="flex items-center justify-center gap-2 w-full max-w-xs mt-3 rounded-xl border border-white/20 px-6 py-3.5 text-base font-medium text-gray-300 hover:bg-white/10 transition-colors"
         >
-          Ya tenés la app? Iniciar sesión
+          Modo web
         </button>
       </div>
     )
