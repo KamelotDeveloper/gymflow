@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { MercadoPagoConfig, Preference } from 'mercadopago'
 import { supabase } from '../supabase.js'
 
 // Extend Express Request to include adminId after requireAdmin middleware
@@ -66,7 +67,7 @@ async function authenticateUser(req: import('express').Request, res: import('exp
 }
 
 // ──────────────────────────────────────────────
-//  Mercado Pago preference client (mock for now)
+//  Mercado Pago preference client
 // ──────────────────────────────────────────────
 
 interface MPPreferenceInput {
@@ -82,28 +83,27 @@ interface MPPreferenceOutput {
   sandbox_init_point: string
 }
 
-/**
- * Creates an MP preference.
- *
- * When MP_ACCESS_TOKEN is set and @mercadopago/sdk is available,
- * replace this body with a real SDK call:
- *
- *   import { MercadoPagoConfig, Preference } from 'mercadopago'
- *   const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN })
- *   const preference = new Preference(client)
- *   return await preference.create({ body: input })
- *
- * Until then, returns a mock init_point so the frontend flow can be tested.
- */
 async function createMPPreference(input: MPPreferenceInput): Promise<MPPreferenceOutput> {
-  const mockId = `mock_pref_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+  const accessToken = process.env.MP_ACCESS_TOKEN
 
-  const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
+  if (!accessToken) {
+    // Fallback mock si no hay token configurado
+    const mockId = `mock_pref_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+    return {
+      id: mockId,
+      init_point: `https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=${mockId}`,
+      sandbox_init_point: `https://sandbox.mercadopago.com.ar/checkout/v1/redirect?pref_id=${mockId}`,
+    }
+  }
+
+  const client = new MercadoPagoConfig({ accessToken })
+  const preference = new Preference(client)
+  const result = await preference.create({ body: input as any })
 
   return {
-    id: mockId,
-    init_point: `https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=${mockId}`,
-    sandbox_init_point: `https://sandbox.mercadopago.com.ar/checkout/v1/redirect?pref_id=${mockId}`,
+    id: result.id!,
+    init_point: result.init_point!,
+    sandbox_init_point: result.sandbox_init_point ?? result.init_point!,
   }
 }
 
