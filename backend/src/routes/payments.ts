@@ -201,8 +201,12 @@ router.post('/mp/create-preference', async (req, res) => {
         notification_url: `${process.env.SUPABASE_URL}/functions/v1/mercadopago-webhook`,
       })
     } catch (mpErr) {
-      // If MP call fails, keep transaction as pending (admin can handle it)
+      // If MP call fails, delete pending transaction so user can retry
       console.error('MP preference creation failed:', mpErr)
+      await supabase
+        .from('payment_transactions')
+        .delete()
+        .eq('id', txn.id)
       return res.status(502).json({ error: 'Error al conectar con Mercado Pago. Intentá de nuevo.' })
     }
 
