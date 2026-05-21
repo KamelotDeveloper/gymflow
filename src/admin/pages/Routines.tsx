@@ -360,14 +360,16 @@ export default function Routines() {
 
   const saveRoutineExerciseRow = async (re: RoutineExercise) => {
     try {
+      // Leer valor actual del state para evitar stale closure
+      const current = routineExercises.find((r) => r.id === re.id) ?? re
       await (supabase.from('routine_exercises') as any)
         .update({
-          sets: re.sets,
-          reps: re.reps,
-          weight_kg: re.weight_kg,
-          rest_seconds: re.rest_seconds,
+          sets: current.sets,
+          reps: current.reps,
+          weight_kg: current.weight_kg,
+          rest_seconds: current.rest_seconds,
         })
-        .eq('id', re.id)
+        .eq('id', current.id)
     } catch {
       console.error('Error al guardar ejercicio')
     }
@@ -394,9 +396,11 @@ export default function Routines() {
 
   const handleExerciseNameBlur = async (re: RoutineExercise) => {
     try {
+      // Leer valor actual del state para evitar stale closure
+      const current = routineExercises.find((r) => r.id === re.id) ?? re
       await (supabase.from('exercises') as any)
-        .update({ name: re.exercise.name })
-        .eq('id', re.exercise.id)
+        .update({ name: current.exercise.name })
+        .eq('id', current.exercise.id)
     } catch {
       console.error('Error al guardar nombre')
     }
@@ -404,9 +408,10 @@ export default function Routines() {
 
   const handleExerciseVideoBlur = async (re: RoutineExercise) => {
     try {
+      const current = routineExercises.find((r) => r.id === re.id) ?? re
       await (supabase.from('exercises') as any)
-        .update({ video_url: re.exercise.video_url })
-        .eq('id', re.exercise.id)
+        .update({ video_url: current.exercise.video_url })
+        .eq('id', current.exercise.id)
     } catch {
       console.error('Error al guardar URL')
     }
@@ -417,11 +422,14 @@ export default function Routines() {
   const handleAddExercise = async () => {
     if (!selectedRoutine) return
     try {
+      // Nombre único para evitar UNIQUE constraint en exercises.name
+      const uniqueName = `Ejercicio ${routineExercises.length + 1}`
+
       const { data: newExercise } = await (
         supabase.from('exercises') as any
       )
         .insert({
-          name: 'Nuevo ejercicio',
+          name: uniqueName,
           muscle_group: 'other',
           video_url: '',
           video_type: 'youtube',
@@ -430,10 +438,13 @@ export default function Routines() {
         .select()
         .single()
 
-      if (!newExercise) return
+      if (!newExercise) {
+        alert('No se pudo crear el ejercicio. ¿Puede existir uno con el mismo nombre?')
+        return
+      }
 
       const nextOrder = routineExercises.length + 1
-      await (supabase.from('routine_exercises') as any)
+      const { error: linkError } = await (supabase.from('routine_exercises') as any)
         .insert({
           routine_id: selectedRoutine.id,
           exercise_id: newExercise.id,
@@ -444,9 +455,15 @@ export default function Routines() {
           order_index: nextOrder,
         })
 
+      if (linkError) {
+        alert(`Error al agregar ejercicio: ${linkError.message}`)
+        return
+      }
+
       await fetchRoutineExercises(selectedRoutine.id)
     } catch (err) {
       console.error('Error al agregar ejercicio:', err)
+      alert('Error al agregar ejercicio. Revisá la consola para más detalles.')
     }
   }
 
