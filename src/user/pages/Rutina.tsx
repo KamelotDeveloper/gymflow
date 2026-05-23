@@ -4,6 +4,14 @@ import { supabase } from '../../shared/lib/supabase'
 import UserLayout from '../../shared/components/UserLayout'
 import { ArrowLeft, CheckCircle, Loader2 } from 'lucide-react'
 
+function calcCurrentWeek(sessions: { session_date: string }[]): number {
+  if (sessions.length === 0) return 1
+  const dates = sessions.map((s) => new Date(s.session_date)).sort((a, b) => a.getTime() - b.getTime())
+  const diffMs = dates[dates.length - 1].getTime() - dates[0].getTime()
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  return Math.floor(diffDays / 7) + 1
+}
+
 /* ── Types ── */
 
 type SetDatum = {
@@ -63,6 +71,7 @@ export default function UserRutina() {
   const [perSetInputs, setPerSetInputs] = useState<Record<string, PerSetField[]>>({})
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState(false)
+  const [currentWeek, setCurrentWeek] = useState(1)
 
   useEffect(() => {
     if (!profile?.id) return
@@ -145,6 +154,15 @@ export default function UserRutina() {
       }
       setInputs(singleInputs)
       setPerSetInputs(psInputs)
+
+      // Calculate current week
+      const { data: sessions } = await (supabase as any)
+        .from('workout_sessions')
+        .select('session_date')
+        .eq('profile_id', profile!.id)
+        .order('session_date', { ascending: true })
+      setCurrentWeek(calcCurrentWeek(sessions ?? []))
+
       setView('exercise')
     } catch {
       console.error('Error al cargar ejercicios')
@@ -322,6 +340,7 @@ export default function UserRutina() {
             perSetInputs={perSetInputs}
             saving={saving}
             successMsg={successMsg}
+            currentWeek={currentWeek}
             onBack={handleBack}
             onUpdateInput={updateInput}
             onUpdatePerSetField={updatePerSetField}
@@ -391,6 +410,7 @@ function ExerciseView({
   perSetInputs,
   saving,
   successMsg,
+  currentWeek,
   onBack,
   onUpdateInput,
   onUpdatePerSetField,
@@ -402,6 +422,7 @@ function ExerciseView({
   perSetInputs: Record<string, PerSetField[]>
   saving: boolean
   successMsg: boolean
+  currentWeek: number
   onBack: () => void
   onUpdateInput: (id: string, field: 'sets' | 'reps' | 'weight_kg', value: string) => void
   onUpdatePerSetField: (id: string, setIndex: number, field: 'reps_done' | 'weight_used_kg', value: string) => void
@@ -425,9 +446,14 @@ function ExerciseView({
         Rutinas
       </button>
 
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-        {routine.name}
-      </h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          {routine.name}
+        </h1>
+        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+          Semana {currentWeek}
+        </span>
+      </div>
 
       {successMsg ? (
         <div className="flex flex-col items-center justify-center py-16 gap-3">

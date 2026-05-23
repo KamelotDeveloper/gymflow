@@ -21,13 +21,6 @@ type ProgressItem = {
   delta_weight_kg: number
 }
 
-type WorkoutSession = {
-  id: string
-  session_date: string
-  routine_name: string
-  exercise_count: number
-}
-
 /* ── Types for "Por día" tab ── */
 
 type DayProgress = {
@@ -52,13 +45,24 @@ type SetProgress = {
   delta_weight_kg: number | null
 }
 
+/** Calculate relative week number from session dates */
+function calcWeekNumber(sessions: { session_date: string }[]): number {
+  if (sessions.length === 0) return 1
+  const dates = sessions.map((s) => new Date(s.session_date)).sort((a, b) => a.getTime() - b.getTime())
+  const first = dates[0]
+  const latest = dates[dates.length - 1]
+  const diffMs = latest.getTime() - first.getTime()
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  return Math.floor(diffDays / 7) + 1
+}
+
 export default function Progreso() {
   const { profile } = useAuthContext()
 
-  const [tab, setTab] = useState<'ejercicio' | 'historial' | 'dia'>('ejercicio')
+  const [tab, setTab] = useState<'ejercicio' | 'dia'>('ejercicio')
   const [progressData, setProgressData] = useState<ProgressItem[]>([])
-  const [history, setHistory] = useState<WorkoutSession[]>([])
   const [dayData, setDayData] = useState<DayProgress[]>([])
+  const [currentWeek, setCurrentWeek] = useState(1)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -79,31 +83,7 @@ export default function Progreso() {
         .order('exercise_name', { ascending: true })
       setProgressData(prog ?? [])
 
-      // History
-      const { data: sess } = await (supabase as any)
-        .from('workout_sessions')
-        .select(`
-          id,
-          session_date,
-          routine:routines(name),
-          logs:workout_logs(count)
-        `)
-        .eq('profile_id', pid)
-        .order('session_date', { ascending: false })
-        .limit(50)
-
-      if (sess) {
-        setHistory(
-          sess.map((s: any) => ({
-            id: s.id,
-            session_date: s.session_date,
-            routine_name: s.routine?.name ?? 'Rutina',
-            exercise_count: s.logs?.[0]?.count ?? 0,
-          })),
-        )
-      }
-
-      // Day-organized data
+      // Day-organized data + week number
       await fetchDayData(pid)
     } catch {
       // data not available yet
@@ -114,45 +94,49 @@ export default function Progreso() {
 
   const fetchDayData = async (pid: string) => {
     try {
-      // 1. Fetch active routine assignments with routine + exercises + full exercise details
-      const { data: assignments } = await (supabase as any)
-        .from('routine_assignments')
+      // 1. Fetch routines for this member (same as Rutina.tsx)
+      const { data: routines } = await (supabase as any)
+        .from('routines')
         .select(`
-          id,
-          routine:routines(
-            id, name, day_number,
-            routine_exercises(
-              id, sets, sets_data, order_index,
-              exercise:exercises(id, name, muscle_group)
-            )
+          id, name, day_number, member_id,
+          routine_exercises(
+            id, sets, sets_data, order_index,
+            exercise:exercises(id, name, muscle_group)
           )
         `)
-        .eq('profile_id', pid)
-        .eq('is_active', true)
+        .eq('member_id', pid)
+        .order('day_number', { ascending: true })
 
-      if (!assignments || assignments.length === 0) {
+      if (!routines || routines.length === 0) {
         setDayData([])
         return
       }
 
-      // 2. Fetch all progress comparison data for this user
+      // 2. Fetch sessions for week calculation + progress data
+      const { data: sessions } = await (supabase as any)
+        .from('workout_sessions')
+        .select('id, session_date, routine_id')
+        .eq('profile_id', pid)
+        .order('session_date', { ascending: true })
+
+      const weekNum = calcWeekNumber(sessions ?? [])
+      setCurrentWeek(weekNum)
+
+      // 3. Fetch all progress comparison data for this user
       const { data: progressRows } = await (supabase as any)
         .from('progress_comparison')
         .select('*')
         .eq('profile_id', pid)
 
-      // 3. Build lookup: exercise_id + set_number → progress row
+      // 4. Build lookup: exercise_id + set_number → progress row
       const progressMap: Record<string, any> = {}
       for (const row of progressRows ?? []) {
         progressMap[`${row.exercise_id}-${row.set_number}`] = row
       }
 
-      // 4. Build DayProgress array
+      // 5. Build DayProgress array from routines (not assignments)
       const days: DayProgress[] = []
-      for (const a of assignments) {
-        const r = a.routine
-        if (!r) continue
-
+      for (const r of routines) {
         const exercises: ExerciseProgress[] = []
 
         for (const re of (r.routine_exercises ?? []).sort(
@@ -165,7 +149,7 @@ export default function Progreso() {
           if (setsData.length > 0) {
             setNumbers = setsData.map((sd) => sd.set)
           } else {
-            // Legacy: find distinct set_numbers from progress data for this exercise
+            // Legacy: find distinct set_numbers from progress data
             const distinctSets = new Set<number>()
             for (const row of progressRows ?? []) {
               if (row.exercise_id === re.exercise.id && row.set_number != null) {
@@ -206,11 +190,9 @@ export default function Progreso() {
         })
       }
 
-      // Sort by day_number
       days.sort((a, b) => a.day_number - b.day_number)
       setDayData(days)
     } catch {
-      // day data not available
       setDayData([])
     }
   }
@@ -244,16 +226,6 @@ export default function Progreso() {
           >
             Por día
           </button>
-          <button
-            onClick={() => setTab('historial')}
-            className={`flex-1 pb-3 text-sm font-medium transition-colors ${
-              tab === 'historial'
-                ? 'border-b-2 border-[#DC2626] text-[#DC2626]'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-            }`}
-          >
-            Historial
-          </button>
         </div>
 
         {loading ? (
@@ -262,10 +234,8 @@ export default function Progreso() {
           </div>
         ) : tab === 'ejercicio' ? (
           <TabEjercicio data={progressData} />
-        ) : tab === 'dia' ? (
-          <TabPorDia data={dayData} />
         ) : (
-          <TabHistorial data={history} />
+          <TabPorDia data={dayData} week={currentWeek} />
         )}
       </div>
     </UserLayout>
@@ -361,48 +331,9 @@ function TabEjercicio({ data }: { data: ProgressItem[] }) {
   )
 }
 
-function TabHistorial({ data }: { data: WorkoutSession[] }) {
-  if (data.length === 0) {
-    return (
-      <div className="text-center py-16">
-        <p className="text-gray-500 dark:text-gray-400">
-          No hay entrenamientos registrados todavía.
-        </p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-3">
-      {data.map((s) => (
-        <div
-          key={s.id}
-          className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 flex items-center justify-between"
-        >
-          <div>
-            <p className="text-sm font-medium text-gray-900 dark:text-white">
-              {s.routine_name}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              {new Date(s.session_date).toLocaleDateString('es-AR', {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-              })}
-            </p>
-          </div>
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {s.exercise_count} ejercicio{s.exercise_count !== 1 ? 's' : ''}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 /* ── Tab: Por día ── */
 
-function TabPorDia({ data }: { data: DayProgress[] }) {
+function TabPorDia({ data, week }: { data: DayProgress[]; week: number }) {
   const [selectedDay, setSelectedDay] = useState<DayProgress | null>(null)
 
   // Reset selection when data changes
@@ -414,10 +345,10 @@ function TabPorDia({ data }: { data: DayProgress[] }) {
     return (
       <div className="text-center py-16">
         <p className="text-gray-500 dark:text-gray-400">
-          No tenés rutinas asignadas.
+          No tenés rutinas cargadas.
         </p>
         <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
-          El profe todavía no asignó tu rutina.
+          El profe todavía no cargó tu rutina.
         </p>
       </div>
     )
@@ -438,9 +369,14 @@ function TabPorDia({ data }: { data: DayProgress[] }) {
           Días
         </button>
 
-        <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-          {selectedDay.routine_name}
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+            {selectedDay.routine_name}
+          </h2>
+          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+            Semana {week}
+          </span>
+        </div>
 
         <div className="space-y-4">
           {selectedDay.exercises.map((ex) => (
@@ -524,9 +460,14 @@ function TabPorDia({ data }: { data: DayProgress[] }) {
   // Day selector grid
   return (
     <div>
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-        Seleccioná un día para ver tu progreso por ejercicio y serie.
-      </p>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Seleccioná un día para ver tu progreso.
+        </p>
+        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+          Semana {week}
+        </span>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         {data.map((day) => (
           <button
