@@ -6,6 +6,18 @@ import { ArrowLeft, CheckCircle, Loader2 } from 'lucide-react'
 
 /* ── Types ── */
 
+type SetDatum = {
+  set: number
+  reps: number
+  weight_kg: number | null
+}
+
+type PerSetField = {
+  set_number: number
+  reps_done: string
+  weight_used_kg: string
+}
+
 type Routine = {
   id: string
   name: string
@@ -17,6 +29,7 @@ type RoutineExercise = {
   sets: number
   reps: number
   weight_kg: number
+  sets_data: SetDatum[] | null
   order_index: number
   exercise: {
     id: string
@@ -47,6 +60,7 @@ export default function UserRutina() {
   const [selectedRoutine, setSelectedRoutine] = useState<Routine | null>(null)
   const [exercises, setExercises] = useState<RoutineExercise[]>([])
   const [inputs, setInputs] = useState<ExerciseInput[]>([])
+  const [perSetInputs, setPerSetInputs] = useState<Record<string, PerSetField[]>>({})
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState(false)
 
@@ -93,6 +107,7 @@ export default function UserRutina() {
           sets,
           reps,
           weight_kg,
+          sets_data,
           rest_seconds,
           order_index,
           exercise:exercises(id, name, muscle_group, video_url, video_type)
@@ -102,17 +117,34 @@ export default function UserRutina() {
 
       console.log('🏋️ ejercicios fetch — routineId:', routine.id, 'data:', data, 'error:', error)
 
-      const exs: RoutineExercise[] = data ?? []
+      const exs: RoutineExercise[] = (data ?? []).map((ex: any) => ({
+        ...ex,
+        sets_data: ex.sets_data as SetDatum[] | null,
+      }))
       setExercises(exs)
-      setInputs(
-        exs.map((ex) => ({
-          exercise_id: ex.exercise.id,
-          routine_exercise_id: ex.id,
-          sets: '',
-          reps: '',
-          weight_kg: '',
-        })),
-      )
+
+      // Split into single-field vs per-set inputs
+      const singleInputs: ExerciseInput[] = []
+      const psInputs: Record<string, PerSetField[]> = {}
+      for (const ex of exs) {
+        if (ex.sets_data && ex.sets_data.length > 0) {
+          psInputs[ex.id] = ex.sets_data.map((sd) => ({
+            set_number: sd.set,
+            reps_done: '',
+            weight_used_kg: '',
+          }))
+        } else {
+          singleInputs.push({
+            exercise_id: ex.exercise.id,
+            routine_exercise_id: ex.id,
+            sets: '',
+            reps: '',
+            weight_kg: '',
+          })
+        }
+      }
+      setInputs(singleInputs)
+      setPerSetInputs(psInputs)
       setView('exercise')
     } catch {
       console.error('Error al cargar ejercicios')
@@ -126,6 +158,7 @@ export default function UserRutina() {
     setSelectedRoutine(null)
     setExercises([])
     setInputs([])
+    setPerSetInputs({})
     setSuccessMsg(false)
   }
 
@@ -141,12 +174,30 @@ export default function UserRutina() {
     )
   }
 
+  const updatePerSetField = (
+    routineExerciseId: string,
+    setIndex: number,
+    field: 'reps_done' | 'weight_used_kg',
+    value: string,
+  ) => {
+    setPerSetInputs((prev) => {
+      const sets = [...(prev[routineExerciseId] ?? [])]
+      if (sets[setIndex]) {
+        sets[setIndex] = { ...sets[setIndex], [field]: value }
+      }
+      return { ...prev, [routineExerciseId]: sets }
+    })
+  }
+
   const hasAnyInput = inputs.some(
     (i) => i.sets !== '' || i.reps !== '' || i.weight_kg !== '',
   )
+  const hasAnyPerSetInput = Object.values(perSetInputs).some((sets) =>
+    sets.some((s) => s.reps_done !== '' || s.weight_used_kg !== ''),
+  )
 
   const handleSave = async () => {
-    if (!selectedRoutine || !profile?.id || !hasAnyInput) return
+    if (!selectedRoutine || !profile?.id || (!hasAnyInput && !hasAnyPerSetInput)) return
     setSaving(true)
     try {
       const pid = profile.id
@@ -166,38 +217,76 @@ export default function UserRutina() {
 
       if (!session) throw new Error('No se pudo crear la sesión')
 
-      // 2. For each exercise with data, insert workout_log
-      for (const input of inputs) {
-        const setsNum = parseInt(input.sets, 10)
-        const repsNum = parseInt(input.reps, 10)
-        const weightNum = parseFloat(input.weight_kg)
+      // Get all session IDs for this profile (for baseline check)
+      const { data: allSessions } = await (supabase as any)
+        .from('workout_sessions')
+        .select('id')
+        .eq('profile_id', pid)
+      const allSessionIds: string[] = allSessions?.map((s: any) => s.id) ?? []
 
-        if (isNaN(setsNum) && isNaN(repsNum) && isNaN(weightNum)) continue
+      // 2. For each exercise, insert workout_log rows
+      for (const ex of exercises) {
+        const perSet = perSetInputs[ex.id]
 
-        // Check if baseline exists for this exercise + profile
-        const { data: existingBaseline } = await (supabase as any)
-          .from('workout_logs')
-          .select('id')
-          .eq('exercise_id', input.exercise_id)
-          .eq('is_baseline', true)
-          .in('session_id', (
-            await (supabase as any)
-              .from('workout_sessions')
+        if (perSet && perSet.length > 0) {
+          // ── Per-set mode: insert N rows ──
+          for (const ps of perSet) {
+            const repsNum = parseInt(ps.reps_done, 10)
+            const weightNum = parseFloat(ps.weight_used_kg)
+
+            if (isNaN(repsNum) && isNaN(weightNum)) continue
+
+            // Per-set baseline detection: check (exercise_id, set_number) pair
+            const { data: existingBaseline } = await (supabase as any)
+              .from('workout_logs')
               .select('id')
-              .eq('profile_id', pid)
-          ).data?.map((s: any) => s.id) ?? [])
-          .limit(1)
+              .eq('exercise_id', ex.exercise.id)
+              .eq('set_number', ps.set_number)
+              .eq('is_baseline', true)
+              .limit(1)
 
-        const isBaseline = !existingBaseline || existingBaseline.length === 0
+            const isBaseline = !existingBaseline || existingBaseline.length === 0
 
-        await (supabase as any).from('workout_logs').insert({
-          session_id: session.id,
-          exercise_id: input.exercise_id,
-          set_number: isNaN(setsNum) ? 1 : setsNum,
-          reps_done: isNaN(repsNum) ? 0 : repsNum,
-          weight_used_kg: isNaN(weightNum) ? 0 : weightNum,
-          is_baseline: isBaseline,
-        })
+            await (supabase as any).from('workout_logs').insert({
+              session_id: session.id,
+              exercise_id: ex.exercise.id,
+              set_number: ps.set_number,
+              reps_done: isNaN(repsNum) ? 0 : repsNum,
+              weight_used_kg: isNaN(weightNum) ? 0 : weightNum,
+              is_baseline: isBaseline,
+            })
+          }
+        } else {
+          // ── Single-field mode: insert 1 row (legacy) ──
+          const input = inputs.find((i) => i.routine_exercise_id === ex.id)
+          if (!input) continue
+
+          const setsNum = parseInt(input.sets, 10)
+          const repsNum = parseInt(input.reps, 10)
+          const weightNum = parseFloat(input.weight_kg)
+
+          if (isNaN(setsNum) && isNaN(repsNum) && isNaN(weightNum)) continue
+
+          // Per-exercise baseline detection (original behavior)
+          const { data: existingBaseline } = await (supabase as any)
+            .from('workout_logs')
+            .select('id')
+            .eq('exercise_id', input.exercise_id)
+            .eq('is_baseline', true)
+            .in('session_id', allSessionIds)
+            .limit(1)
+
+          const isBaseline = !existingBaseline || existingBaseline.length === 0
+
+          await (supabase as any).from('workout_logs').insert({
+            session_id: session.id,
+            exercise_id: input.exercise_id,
+            set_number: isNaN(setsNum) ? 1 : setsNum,
+            reps_done: isNaN(repsNum) ? 0 : repsNum,
+            weight_used_kg: isNaN(weightNum) ? 0 : weightNum,
+            is_baseline: isBaseline,
+          })
+        }
       }
 
       // 3. Success feedback
@@ -230,10 +319,12 @@ export default function UserRutina() {
             routine={selectedRoutine!}
             exercises={exercises}
             inputs={inputs}
+            perSetInputs={perSetInputs}
             saving={saving}
             successMsg={successMsg}
             onBack={handleBack}
             onUpdateInput={updateInput}
+            onUpdatePerSetField={updatePerSetField}
             onSave={handleSave}
           />
         )}
@@ -297,23 +388,30 @@ function ExerciseView({
   routine,
   exercises,
   inputs,
+  perSetInputs,
   saving,
   successMsg,
   onBack,
   onUpdateInput,
+  onUpdatePerSetField,
   onSave,
 }: {
   routine: Routine
   exercises: RoutineExercise[]
   inputs: ExerciseInput[]
+  perSetInputs: Record<string, PerSetField[]>
   saving: boolean
   successMsg: boolean
   onBack: () => void
   onUpdateInput: (id: string, field: 'sets' | 'reps' | 'weight_kg', value: string) => void
+  onUpdatePerSetField: (id: string, setIndex: number, field: 'reps_done' | 'weight_used_kg', value: string) => void
   onSave: () => void
 }) {
   const hasAnyInput = inputs.some(
     (i) => i.sets !== '' || i.reps !== '' || i.weight_kg !== '',
+  )
+  const hasAnyPerSetInput = Object.values(perSetInputs).some((sets) =>
+    sets.some((s) => s.reps_done !== '' || s.weight_used_kg !== ''),
   )
 
   return (
@@ -367,72 +465,127 @@ function ExerciseView({
                     <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-semibold mb-2">
                       Profe:
                     </p>
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div>
-                        <p className="text-[10px] text-gray-400 dark:text-gray-500">
-                          Series
-                        </p>
-                        <p className="text-sm font-bold text-gray-700 dark:text-gray-300">
-                          {ex.sets}
-                        </p>
+                    {ex.sets_data && ex.sets_data.length > 0 ? (
+                      <div className="space-y-1">
+                        {ex.sets_data.map((sd) => (
+                          <div key={sd.set} className="flex justify-between text-sm">
+                            <span className="text-gray-500">Serie {sd.set}</span>
+                            <span className="font-bold text-gray-700 dark:text-gray-300">
+                              {sd.reps} reps{sd.weight_kg != null ? ` × ${sd.weight_kg} kg` : ''}
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                      <div>
-                        <p className="text-[10px] text-gray-400 dark:text-gray-500">
-                          Reps
-                        </p>
-                        <p className="text-sm font-bold text-gray-700 dark:text-gray-300">
-                          {ex.reps}
-                        </p>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div>
+                          <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                            Series
+                          </p>
+                          <p className="text-sm font-bold text-gray-700 dark:text-gray-300">
+                            {ex.sets}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                            Reps
+                          </p>
+                          <p className="text-sm font-bold text-gray-700 dark:text-gray-300">
+                            {ex.reps}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                            Peso kg
+                          </p>
+                          <p className="text-sm font-bold text-gray-700 dark:text-gray-300">
+                            {ex.weight_kg}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[10px] text-gray-400 dark:text-gray-500">
-                          Peso kg
-                        </p>
-                        <p className="text-sm font-bold text-gray-700 dark:text-gray-300">
-                          {ex.weight_kg}
-                        </p>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
-                  {/* Input row */}
+                  {/* Input rows — per-set or single-field */}
                   <div className="px-4 pb-4">
                     <p className="text-[10px] text-[#DC2626] uppercase font-semibold mb-2">
                       Hice:
                     </p>
-                    <div className="grid grid-cols-3 gap-2">
-                      <input
-                        type="number"
-                        min={0}
-                        placeholder="—"
-                        value={inp.sets}
-                        onChange={(e) =>
-                          onUpdateInput(ex.id, 'sets', e.target.value)
-                        }
-                        className="w-full h-10 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-center text-sm font-medium text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-[#DC2626] focus:ring-1 focus:ring-[#DC2626] transition-colors"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        placeholder="—"
-                        value={inp.reps}
-                        onChange={(e) =>
-                          onUpdateInput(ex.id, 'reps', e.target.value)
-                        }
-                        className="w-full h-10 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-center text-sm font-medium text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-[#DC2626] focus:ring-1 focus:ring-[#DC2626] transition-colors"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.5}
-                        placeholder="—"
-                        value={inp.weight_kg}
-                        onChange={(e) =>
-                          onUpdateInput(ex.id, 'weight_kg', e.target.value)
-                        }
-                        className="w-full h-10 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-center text-sm font-medium text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-[#DC2626] focus:ring-1 focus:ring-[#DC2626] transition-colors"
-                      />
-                    </div>
+                    {ex.sets_data && ex.sets_data.length > 0 ? (
+                      <div className="space-y-2">
+                        {ex.sets_data.map((sd, idx) => {
+                          const psFields = (perSetInputs[ex.id] ?? [])[idx] ?? {
+                            set_number: sd.set,
+                            reps_done: '',
+                            weight_used_kg: '',
+                          }
+                          return (
+                            <div key={sd.set} className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-gray-500 w-14 shrink-0">
+                                Serie {sd.set}
+                              </span>
+                              <input
+                                type="number"
+                                min={0}
+                                placeholder="—"
+                                value={psFields.reps_done}
+                                onChange={(e) =>
+                                  onUpdatePerSetField(ex.id, idx, 'reps_done', e.target.value)
+                                }
+                                className="flex-1 h-10 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-center text-sm font-medium text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-[#DC2626] focus:ring-1 focus:ring-[#DC2626] transition-colors"
+                              />
+                              <span className="text-gray-400 text-sm">×</span>
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.5}
+                                placeholder="—"
+                                value={psFields.weight_used_kg}
+                                onChange={(e) =>
+                                  onUpdatePerSetField(ex.id, idx, 'weight_used_kg', e.target.value)
+                                }
+                                className="w-20 h-10 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-center text-sm font-medium text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-[#DC2626] focus:ring-1 focus:ring-[#DC2626] transition-colors"
+                              />
+                              <span className="text-xs text-gray-400">kg</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder="—"
+                          value={inp.sets}
+                          onChange={(e) =>
+                            onUpdateInput(ex.id, 'sets', e.target.value)
+                          }
+                          className="w-full h-10 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-center text-sm font-medium text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-[#DC2626] focus:ring-1 focus:ring-[#DC2626] transition-colors"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder="—"
+                          value={inp.reps}
+                          onChange={(e) =>
+                            onUpdateInput(ex.id, 'reps', e.target.value)
+                          }
+                          className="w-full h-10 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-center text-sm font-medium text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-[#DC2626] focus:ring-1 focus:ring-[#DC2626] transition-colors"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.5}
+                          placeholder="—"
+                          value={inp.weight_kg}
+                          onChange={(e) =>
+                            onUpdateInput(ex.id, 'weight_kg', e.target.value)
+                          }
+                          className="w-full h-10 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-center text-sm font-medium text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-[#DC2626] focus:ring-1 focus:ring-[#DC2626] transition-colors"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )
@@ -444,7 +597,7 @@ function ExerciseView({
             <div className="max-w-lg mx-auto">
               <button
                 onClick={onSave}
-                disabled={!hasAnyInput || saving}
+                disabled={(!hasAnyInput && !hasAnyPerSetInput) || saving}
                 className="w-full h-12 rounded-xl bg-[#111] dark:bg-[#DC2626] text-white font-semibold text-sm hover:bg-[#DC2626] dark:hover:bg-[#b71c1c] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {saving ? (

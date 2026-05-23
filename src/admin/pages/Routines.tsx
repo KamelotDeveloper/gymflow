@@ -26,6 +26,12 @@ type Exercise = {
   video_url: string
 }
 
+type SetDatum = {
+  set: number
+  reps: number
+  weight_kg: number | null
+}
+
 type RoutineExercise = {
   id: string
   routine_id: string
@@ -35,6 +41,7 @@ type RoutineExercise = {
   weight_kg: number
   rest_seconds: number
   order_index: number
+  sets_data: SetDatum[] | null
   exercise: Exercise
 }
 
@@ -69,6 +76,7 @@ export default function Routines() {
   const [routineExercises, setRoutineExercises] = useState<RoutineExercise[]>([])
   const [exercisesLoading, setExercisesLoading] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const [perSetExpanded, setPerSetExpanded] = useState<Set<string>>(new Set())
 
   // ── Create form ──
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -173,7 +181,7 @@ export default function Routines() {
     try {
       const { data } = await (supabase.from('routine_exercises') as any)
         .select(
-          'id, sets, reps, weight_kg, rest_seconds, order_index, exercise:exercises(id, name, video_url)',
+          'id, sets, reps, weight_kg, rest_seconds, order_index, sets_data, exercise:exercises(id, name, video_url)',
         )
         .eq('routine_id', routineId)
         .order('order_index', { ascending: true })
@@ -362,13 +370,21 @@ export default function Routines() {
     try {
       // Leer valor actual del state para evitar stale closure
       const current = routineExercises.find((r) => r.id === re.id) ?? re
+      const updatePayload: any = {
+        sets: current.sets,
+        reps: current.reps,
+        weight_kg: current.weight_kg,
+        rest_seconds: current.rest_seconds,
+      }
+      // Cuando per-set está expandido, escribir sets_data y sincronizar sets
+      if (perSetExpanded.has(current.id) && current.sets_data) {
+        updatePayload.sets_data = current.sets_data
+        updatePayload.sets = current.sets_data.length
+      } else {
+        updatePayload.sets_data = null
+      }
       await (supabase.from('routine_exercises') as any)
-        .update({
-          sets: current.sets,
-          reps: current.reps,
-          weight_kg: current.weight_kg,
-          rest_seconds: current.rest_seconds,
-        })
+        .update(updatePayload)
         .eq('id', current.id)
     } catch {
       console.error('Error al guardar ejercicio')
@@ -392,6 +408,45 @@ export default function Routines() {
         return { ...re, exercise: { ...re.exercise, [field]: value } }
       }),
     )
+  }
+
+  const updateExerciseSetField = (
+    id: string,
+    setIndex: number,
+    field: 'reps' | 'weight_kg',
+    value: number | null,
+  ) => {
+    setRoutineExercises((prev) =>
+      prev.map((re) => {
+        if (re.id !== id || !re.sets_data) return re
+        const newSetsData = re.sets_data.map((sd, i) =>
+          i === setIndex ? { ...sd, [field]: value } : sd,
+        )
+        return { ...re, sets_data: newSetsData }
+      }),
+    )
+  }
+
+  const togglePerSet = (re: RoutineExercise) => {
+    const isCurrentlyExpanded = perSetExpanded.has(re.id)
+    if (isCurrentlyExpanded) {
+      // Colapsar: limpiar sets_data
+      setRoutineExercises((prev) =>
+        prev.map((r) => (r.id === re.id ? { ...r, sets_data: null } : r)),
+      )
+    } else {
+      // Expandir: generar sets_data desde valores escalares
+      const sd = buildSetsData(re.sets, re.reps, re.weight_kg)
+      setRoutineExercises((prev) =>
+        prev.map((r) => (r.id === re.id ? { ...r, sets_data: sd } : r)),
+      )
+    }
+    setPerSetExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(re.id)) next.delete(re.id)
+      else next.add(re.id)
+      return next
+    })
   }
 
   const handleExerciseNameBlur = async (re: RoutineExercise) => {
@@ -1219,23 +1274,39 @@ export default function Routines() {
                             >
                               Series
                             </label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={re.sets}
-                              onChange={(e) =>
-                                updateExerciseField(
-                                  re.id,
-                                  'sets',
-                                  Number(e.target.value),
-                                )
-                              }
-                              onBlur={() => saveRoutineExerciseRow(re)}
-                              style={{
-                                ...inlineInputStyle,
-                                textAlign: 'center',
-                              }}
-                            />
+                            {perSetExpanded.has(re.id) ? (
+                              <div
+                                style={{
+                                  ...inlineInputStyle,
+                                  textAlign: 'center',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: 600,
+                                  color: '#111',
+                                }}
+                              >
+                                {re.sets}
+                              </div>
+                            ) : (
+                              <input
+                                type="number"
+                                min={1}
+                                value={re.sets}
+                                onChange={(e) =>
+                                  updateExerciseField(
+                                    re.id,
+                                    'sets',
+                                    Number(e.target.value),
+                                  )
+                                }
+                                onBlur={() => saveRoutineExerciseRow(re)}
+                                style={{
+                                  ...inlineInputStyle,
+                                  textAlign: 'center',
+                                }}
+                              />
+                            )}
                           </div>
                           <div>
                             <label
@@ -1247,23 +1318,40 @@ export default function Routines() {
                             >
                               Reps
                             </label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={re.reps}
-                              onChange={(e) =>
-                                updateExerciseField(
-                                  re.id,
-                                  'reps',
-                                  Number(e.target.value),
-                                )
-                              }
-                              onBlur={() => saveRoutineExerciseRow(re)}
-                              style={{
-                                ...inlineInputStyle,
-                                textAlign: 'center',
-                              }}
-                            />
+                            {perSetExpanded.has(re.id) ? (
+                              <div
+                                style={{
+                                  ...inlineInputStyle,
+                                  textAlign: 'center',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: 12,
+                                  color: '#9ca3af',
+                                  fontStyle: 'italic',
+                                }}
+                              >
+                                por serie
+                              </div>
+                            ) : (
+                              <input
+                                type="number"
+                                min={1}
+                                value={re.reps}
+                                onChange={(e) =>
+                                  updateExerciseField(
+                                    re.id,
+                                    'reps',
+                                    Number(e.target.value),
+                                  )
+                                }
+                                onBlur={() => saveRoutineExerciseRow(re)}
+                                style={{
+                                  ...inlineInputStyle,
+                                  textAlign: 'center',
+                                }}
+                              />
+                            )}
                           </div>
                           <div>
                             <label
@@ -1275,24 +1363,41 @@ export default function Routines() {
                             >
                               Peso (kg)
                             </label>
-                            <input
-                              type="number"
-                              step={0.5}
-                              min={0}
-                              value={re.weight_kg}
-                              onChange={(e) =>
-                                updateExerciseField(
-                                  re.id,
-                                  'weight_kg',
-                                  Number(e.target.value),
-                                )
-                              }
-                              onBlur={() => saveRoutineExerciseRow(re)}
-                              style={{
-                                ...inlineInputStyle,
-                                textAlign: 'center',
-                              }}
-                            />
+                            {perSetExpanded.has(re.id) ? (
+                              <div
+                                style={{
+                                  ...inlineInputStyle,
+                                  textAlign: 'center',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: 12,
+                                  color: '#9ca3af',
+                                  fontStyle: 'italic',
+                                }}
+                              >
+                                por serie
+                              </div>
+                            ) : (
+                              <input
+                                type="number"
+                                step={0.5}
+                                min={0}
+                                value={re.weight_kg}
+                                onChange={(e) =>
+                                  updateExerciseField(
+                                    re.id,
+                                    'weight_kg',
+                                    Number(e.target.value),
+                                  )
+                                }
+                                onBlur={() => saveRoutineExerciseRow(re)}
+                                style={{
+                                  ...inlineInputStyle,
+                                  textAlign: 'center',
+                                }}
+                              />
+                            )}
                           </div>
                           <div>
                             <label
@@ -1376,7 +1481,129 @@ export default function Routines() {
                             )}
                           </div>
                         </div>
-                      </div>
+
+                          {/* Per-set collapsible section (mobile) */}
+                          {re.sets > 1 && (
+                            <div>
+                              <button
+                                onClick={() => togglePerSet(re)}
+                                style={{
+                                  border: 'none',
+                                  background: 'none',
+                                  color: '#DC2626',
+                                  fontSize: 12,
+                                  cursor: 'pointer',
+                                  fontWeight: 600,
+                                  padding: '4px 0',
+                                  textDecoration: 'underline',
+                                }}
+                              >
+                                {perSetExpanded.has(re.id)
+                                  ? '✕ Cerrar serie'
+                                  : '☰ Por serie'}
+                              </button>
+                              {perSetExpanded.has(re.id) &&
+                                re.sets_data?.map((setDatum, setIdx) => (
+                                  <div
+                                    key={`${re.id}-set-${setIdx}`}
+                                    style={{
+                                      display: 'flex',
+                                      gap: 8,
+                                      alignItems: 'center',
+                                      marginTop: 6,
+                                      padding: 8,
+                                      backgroundColor: '#fafafa',
+                                      borderRadius: 8,
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        color: '#6b7280',
+                                        minWidth: 48,
+                                      }}
+                                    >
+                                      Serie {setDatum.set}
+                                    </span>
+                                    <div style={{ flex: 1 }}>
+                                      <label
+                                        style={{
+                                          display: 'block',
+                                          fontSize: 10,
+                                          color: '#6b7280',
+                                          marginBottom: 2,
+                                        }}
+                                      >
+                                        Reps
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={setDatum.reps}
+                                        onChange={(e) =>
+                                          updateExerciseSetField(
+                                            re.id,
+                                            setIdx,
+                                            'reps',
+                                            Number(e.target.value),
+                                          )
+                                        }
+                                        onBlur={() =>
+                                          saveRoutineExerciseRow(re)
+                                        }
+                                        style={{
+                                          ...inlineInputStyle,
+                                          textAlign: 'center',
+                                          border: '1px solid #e5e7eb',
+                                          backgroundColor: '#fff',
+                                          width: '100%',
+                                        }}
+                                      />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                      <label
+                                        style={{
+                                          display: 'block',
+                                          fontSize: 10,
+                                          color: '#6b7280',
+                                          marginBottom: 2,
+                                        }}
+                                      >
+                                        Peso (kg)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        step={0.5}
+                                        min={0}
+                                        value={setDatum.weight_kg ?? ''}
+                                        onChange={(e) =>
+                                          updateExerciseSetField(
+                                            re.id,
+                                            setIdx,
+                                            'weight_kg',
+                                            e.target.value === ''
+                                              ? null
+                                              : Number(e.target.value),
+                                          )
+                                        }
+                                        onBlur={() =>
+                                          saveRoutineExerciseRow(re)
+                                        }
+                                        style={{
+                                          ...inlineInputStyle,
+                                          textAlign: 'center',
+                                          border: '1px solid #e5e7eb',
+                                          backgroundColor: '#fff',
+                                          width: '100%',
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </div>
                     ))}
                   </div>
                 ) : (
@@ -1412,161 +1639,352 @@ export default function Routines() {
                         </tr>
                       </thead>
                       <tbody>
-                        {routineExercises.map((re) => (
-                          <tr
-                            key={re.id}
-                            style={{ borderBottom: '1px solid #e5e7eb' }}
-                          >
-                            <Td center>{re.order_index}</Td>
-                            <Td>
-                              <input
-                                type="text"
-                                value={re.exercise.name}
-                                onChange={(e) =>
-                                  updateExerciseExerciseField(
-                                    re.id,
-                                    'name',
-                                    e.target.value,
-                                  )
-                                }
-                                onBlur={() => handleExerciseNameBlur(re)}
-                                style={inlineInputStyle}
-                              />
-                            </Td>
-                            <Td center>
-                              <input
-                                type="number"
-                                min={1}
-                                value={re.sets}
-                                onChange={(e) =>
-                                  updateExerciseField(
-                                    re.id,
-                                    'sets',
-                                    Number(e.target.value),
-                                  )
-                                }
-                                onBlur={() => saveRoutineExerciseRow(re)}
-                                style={{
-                                  ...inlineInputStyle,
-                                  width: 56,
-                                  textAlign: 'center',
-                                }}
-                              />
-                            </Td>
-                            <Td center>
-                              <input
-                                type="number"
-                                min={1}
-                                value={re.reps}
-                                onChange={(e) =>
-                                  updateExerciseField(
-                                    re.id,
-                                    'reps',
-                                    Number(e.target.value),
-                                  )
-                                }
-                                onBlur={() => saveRoutineExerciseRow(re)}
-                                style={{
-                                  ...inlineInputStyle,
-                                  width: 56,
-                                  textAlign: 'center',
-                                }}
-                              />
-                            </Td>
-                            <Td center>
-                              <input
-                                type="number"
-                                step={0.5}
-                                min={0}
-                                value={re.weight_kg}
-                                onChange={(e) =>
-                                  updateExerciseField(
-                                    re.id,
-                                    'weight_kg',
-                                    Number(e.target.value),
-                                  )
-                                }
-                                onBlur={() => saveRoutineExerciseRow(re)}
-                                style={{
-                                  ...inlineInputStyle,
-                                  width: 68,
-                                  textAlign: 'center',
-                                }}
-                              />
-                            </Td>
-                            <Td center>
-                              <input
-                                type="number"
-                                min={0}
-                                value={re.rest_seconds}
-                                onChange={(e) =>
-                                  updateExerciseField(
-                                    re.id,
-                                    'rest_seconds',
-                                    Number(e.target.value),
-                                  )
-                                }
-                                onBlur={() => saveRoutineExerciseRow(re)}
-                                style={{
-                                  ...inlineInputStyle,
-                                  width: 68,
-                                  textAlign: 'center',
-                                }}
-                              />
-                            </Td>
-                            <Td>
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 4,
-                                }}
-                              >
-                                <input
-                                  type="text"
-                                  value={re.exercise.video_url}
-                                  onChange={(e) =>
-                                    updateExerciseExerciseField(
-                                      re.id,
-                                      'video_url',
-                                      e.target.value,
-                                    )
-                                  }
-                                  onBlur={() => handleExerciseVideoBlur(re)}
-                                  style={{
-                                    ...inlineInputStyle,
-                                    flex: 1,
-                                    minWidth: 120,
-                                  }}
-                                />
-                                {re.exercise.video_url && (
-                                  <a
-                                    href={re.exercise.video_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                        {routineExercises.map((re) => {
+                          const isExpanded = perSetExpanded.has(re.id)
+                          return (
+                            <>
+                              <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                                <Td center>{re.order_index}</Td>
+                                <Td>
+                                  <input
+                                    type="text"
+                                    value={re.exercise.name}
+                                    onChange={(e) =>
+                                      updateExerciseExerciseField(
+                                        re.id,
+                                        'name',
+                                        e.target.value,
+                                      )
+                                    }
+                                    onBlur={() => handleExerciseNameBlur(re)}
+                                    style={inlineInputStyle}
+                                  />
+                                </Td>
+                                <Td center>
+                                  {isExpanded ? (
+                                    <div
+                                      style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          fontSize: 14,
+                                          fontWeight: 600,
+                                          color: '#111',
+                                        }}
+                                      >
+                                        {re.sets}
+                                      </span>
+                                      <button
+                                        onClick={() => togglePerSet(re)}
+                                        style={{
+                                          border: 'none',
+                                          background: 'none',
+                                          color: '#DC2626',
+                                          fontSize: 10,
+                                          cursor: 'pointer',
+                                          fontWeight: 600,
+                                          padding: 0,
+                                          textDecoration: 'underline',
+                                        }}
+                                      >
+                                        Cerrar serie
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div
+                                      style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                      }}
+                                    >
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={re.sets}
+                                        onChange={(e) =>
+                                          updateExerciseField(
+                                            re.id,
+                                            'sets',
+                                            Number(e.target.value),
+                                          )
+                                        }
+                                        onBlur={() => saveRoutineExerciseRow(re)}
+                                        style={{
+                                          ...inlineInputStyle,
+                                          width: 56,
+                                          textAlign: 'center',
+                                        }}
+                                      />
+                                      {re.sets > 1 && (
+                                        <button
+                                          onClick={() => togglePerSet(re)}
+                                          style={{
+                                            border: 'none',
+                                            background: 'none',
+                                            color: '#DC2626',
+                                            fontSize: 10,
+                                            cursor: 'pointer',
+                                            fontWeight: 600,
+                                            padding: 0,
+                                            textDecoration: 'underline',
+                                          }}
+                                        >
+                                          Por serie
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                </Td>
+                                <Td center>
+                                  {isExpanded ? (
+                                    <span
+                                      style={{
+                                        fontSize: 12,
+                                        color: '#9ca3af',
+                                        fontStyle: 'italic',
+                                      }}
+                                    >
+                                      por serie
+                                    </span>
+                                  ) : (
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={re.reps}
+                                      onChange={(e) =>
+                                        updateExerciseField(
+                                          re.id,
+                                          'reps',
+                                          Number(e.target.value),
+                                        )
+                                      }
+                                      onBlur={() => saveRoutineExerciseRow(re)}
+                                      style={{
+                                        ...inlineInputStyle,
+                                        width: 56,
+                                        textAlign: 'center',
+                                      }}
+                                    />
+                                  )}
+                                </Td>
+                                <Td center>
+                                  {isExpanded ? (
+                                    <span
+                                      style={{
+                                        fontSize: 12,
+                                        color: '#9ca3af',
+                                        fontStyle: 'italic',
+                                      }}
+                                    >
+                                      por serie
+                                    </span>
+                                  ) : (
+                                    <input
+                                      type="number"
+                                      step={0.5}
+                                      min={0}
+                                      value={re.weight_kg}
+                                      onChange={(e) =>
+                                        updateExerciseField(
+                                          re.id,
+                                          'weight_kg',
+                                          Number(e.target.value),
+                                        )
+                                      }
+                                      onBlur={() => saveRoutineExerciseRow(re)}
+                                      style={{
+                                        ...inlineInputStyle,
+                                        width: 68,
+                                        textAlign: 'center',
+                                      }}
+                                    />
+                                  )}
+                                </Td>
+                                <Td center>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={re.rest_seconds}
+                                    onChange={(e) =>
+                                      updateExerciseField(
+                                        re.id,
+                                        'rest_seconds',
+                                        Number(e.target.value),
+                                      )
+                                    }
+                                    onBlur={() => saveRoutineExerciseRow(re)}
                                     style={{
-                                      color: '#6b7280',
+                                      ...inlineInputStyle,
+                                      width: 68,
+                                      textAlign: 'center',
+                                    }}
+                                  />
+                                </Td>
+                                <Td>
+                                  <div
+                                    style={{
                                       display: 'flex',
                                       alignItems: 'center',
-                                      flexShrink: 0,
+                                      gap: 4,
                                     }}
                                   >
-                                    <ExternalLink size={14} />
-                                  </a>
-                                )}
-                              </div>
-                            </Td>
-                            <Td center>
-                              <IconButton
-                                onClick={() => handleDeleteExercise(re)}
-                                title="Eliminar"
-                                style={{ color: '#DC2626' }}
-                              >
-                                <Trash2 size={16} />
-                              </IconButton>
-                            </Td>
-                          </tr>
-                        ))}
+                                    <input
+                                      type="text"
+                                      value={re.exercise.video_url}
+                                      onChange={(e) =>
+                                        updateExerciseExerciseField(
+                                          re.id,
+                                          'video_url',
+                                          e.target.value,
+                                        )
+                                      }
+                                      onBlur={() => handleExerciseVideoBlur(re)}
+                                      style={{
+                                        ...inlineInputStyle,
+                                        flex: 1,
+                                        minWidth: 120,
+                                      }}
+                                    />
+                                    {re.exercise.video_url && (
+                                      <a
+                                        href={re.exercise.video_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          color: '#6b7280',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        <ExternalLink size={14} />
+                                      </a>
+                                    )}
+                                  </div>
+                                </Td>
+                                <Td center>
+                                  <IconButton
+                                    onClick={() => handleDeleteExercise(re)}
+                                    title="Eliminar"
+                                    style={{ color: '#DC2626' }}
+                                  >
+                                    <Trash2 size={16} />
+                                  </IconButton>
+                                </Td>
+                              </tr>
+                              {/* Per-set sub-rows cuando está expandido */}
+                              {isExpanded &&
+                                re.sets_data?.map((setDatum, setIdx) => (
+                                  <tr
+                                    key={`${re.id}-set-${setIdx}`}
+                                    style={{
+                                      borderBottom: '1px solid #e5e7eb',
+                                      backgroundColor: '#fafafa',
+                                    }}
+                                  >
+                                    <td
+                                      style={{
+                                        padding: '6px 12px',
+                                        fontSize: 12,
+                                        color: '#9ca3af',
+                                        textAlign: 'center',
+                                        width: 40,
+                                      }}
+                                    ></td>
+                                    <td
+                                      style={{
+                                        padding: '6px 12px',
+                                        fontSize: 12,
+                                        color: '#6b7280',
+                                        fontWeight: 500,
+                                        paddingLeft: 24,
+                                      }}
+                                    >
+                                      Serie {setDatum.set}
+                                    </td>
+                                    <td
+                                      style={{
+                                        padding: '6px 12px',
+                                        textAlign: 'center',
+                                      }}
+                                    ></td>
+                                    <td
+                                      style={{
+                                        padding: '6px 12px',
+                                        textAlign: 'center',
+                                      }}
+                                    >
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={setDatum.reps}
+                                        onChange={(e) =>
+                                          updateExerciseSetField(
+                                            re.id,
+                                            setIdx,
+                                            'reps',
+                                            Number(e.target.value),
+                                          )
+                                        }
+                                        onBlur={() =>
+                                          saveRoutineExerciseRow(re)
+                                        }
+                                        style={{
+                                          ...inlineInputStyle,
+                                          width: 56,
+                                          textAlign: 'center',
+                                        }}
+                                      />
+                                    </td>
+                                    <td
+                                      style={{
+                                        padding: '6px 12px',
+                                        textAlign: 'center',
+                                      }}
+                                    >
+                                      <input
+                                        type="number"
+                                        step={0.5}
+                                        min={0}
+                                        value={setDatum.weight_kg ?? ''}
+                                        onChange={(e) =>
+                                          updateExerciseSetField(
+                                            re.id,
+                                            setIdx,
+                                            'weight_kg',
+                                            e.target.value === ''
+                                              ? null
+                                              : Number(e.target.value),
+                                          )
+                                        }
+                                        onBlur={() =>
+                                          saveRoutineExerciseRow(re)
+                                        }
+                                        style={{
+                                          ...inlineInputStyle,
+                                          width: 68,
+                                          textAlign: 'center',
+                                        }}
+                                      />
+                                    </td>
+                                    <td
+                                      colSpan={3}
+                                      style={{
+                                        padding: '6px 12px',
+                                      }}
+                                    ></td>
+                                  </tr>
+                                ))}
+                                </>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1668,6 +2086,18 @@ const labelStyle: React.CSSProperties = {
 }
 
 /* ── Helpers ── */
+
+function buildSetsData(
+  sets: number,
+  reps: number,
+  weight_kg: number | null,
+): SetDatum[] {
+  return Array.from({ length: sets }, (_, i) => ({
+    set: i + 1,
+    reps,
+    weight_kg,
+  }))
+}
 
 function Th({
   children,
