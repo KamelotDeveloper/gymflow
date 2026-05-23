@@ -10,18 +10,7 @@ type SetDatum = {
   weight_kg: number | null
 }
 
-type ProgressItem = {
-  exercise_name: string
-  muscle_group: string
-  baseline_reps: number
-  baseline_weight: number
-  current_reps: number
-  current_weight: number
-  delta_reps: number
-  delta_weight_kg: number
-}
-
-/* ── Types for "Por día" tab ── */
+/* ── Types ── */
 
 type DayProgress = {
   day_number: number
@@ -59,8 +48,6 @@ function calcWeekNumber(sessions: { session_date: string }[]): number {
 export default function Progreso() {
   const { profile } = useAuthContext()
 
-  const [tab, setTab] = useState<'ejercicio' | 'dia'>('ejercicio')
-  const [progressData, setProgressData] = useState<ProgressItem[]>([])
   const [dayData, setDayData] = useState<DayProgress[]>([])
   const [currentWeek, setCurrentWeek] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -74,16 +61,6 @@ export default function Progreso() {
     setLoading(true)
     try {
       const pid = profile!.id
-
-      // Progress comparison
-      const { data: prog } = await (supabase as any)
-        .from('progress_comparison')
-        .select('*')
-        .eq('profile_id', pid)
-        .order('exercise_name', { ascending: true })
-      setProgressData(prog ?? [])
-
-      // Day-organized data + week number
       await fetchDayData(pid)
     } catch {
       // data not available yet
@@ -200,40 +177,19 @@ export default function Progreso() {
   return (
     <UserLayout>
       <div className="px-4 py-6 max-w-lg mx-auto">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-          Mi Progreso
-        </h1>
-
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
-          <button
-            onClick={() => setTab('ejercicio')}
-            className={`flex-1 pb-3 text-sm font-medium transition-colors ${
-              tab === 'ejercicio'
-                ? 'border-b-2 border-[#DC2626] text-[#DC2626]'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-            }`}
-          >
-            Por ejercicio
-          </button>
-          <button
-            onClick={() => setTab('dia')}
-            className={`flex-1 pb-3 text-sm font-medium transition-colors ${
-              tab === 'dia'
-                ? 'border-b-2 border-[#DC2626] text-[#DC2626]'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-            }`}
-          >
-            Por día
-          </button>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Mi Progreso
+          </h1>
+          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+            Semana {currentWeek}
+          </span>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 size={24} className="animate-spin text-gray-400" />
           </div>
-        ) : tab === 'ejercicio' ? (
-          <TabEjercicio data={progressData} />
         ) : (
           <TabPorDia data={dayData} week={currentWeek} />
         )}
@@ -242,96 +198,7 @@ export default function Progreso() {
   )
 }
 
-function TabEjercicio({ data }: { data: ProgressItem[] }) {
-  if (data.length === 0) {
-    return (
-      <div className="text-center py-16">
-        <p className="text-gray-500 dark:text-gray-400">
-          Todavía no hay datos de progreso.
-        </p>
-        <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
-          Registrá tu primer entrenamiento para empezar.
-        </p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      {data.map((item, i) => (
-        <div
-          key={i}
-          className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden"
-        >
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900 dark:text-white text-sm">
-                {item.exercise_name}
-              </h3>
-              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                {item.muscle_group}
-              </span>
-            </div>
-            <div className="grid grid-cols-4 gap-2 text-center">
-              <div className="rounded-lg bg-gray-50 dark:bg-gray-900/50 p-3">
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-semibold mb-1">
-                  Baseline
-                </p>
-                <p className="text-sm font-bold text-gray-900 dark:text-white">
-                  {item.baseline_weight != null || item.baseline_reps != null
-                    ? `${item.baseline_weight != null ? `${item.baseline_weight}kg` : '—'} × ${item.baseline_reps != null ? item.baseline_reps : '—'}`
-                    : '—'}
-                </p>
-              </div>
-              <div className="rounded-lg bg-gray-50 dark:bg-gray-900/50 p-3">
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-semibold mb-1">
-                  Actual
-                </p>
-                <p className="text-sm font-bold text-gray-900 dark:text-white">
-                  {item.current_weight != null || item.current_reps != null
-                    ? `${item.current_weight != null ? `${item.current_weight}kg` : '—'} × ${item.current_reps != null ? item.current_reps : '—'}`
-                    : '—'}
-                </p>
-              </div>
-              <div className="rounded-lg bg-gray-50 dark:bg-gray-900/50 p-3">
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-semibold mb-1">
-                  Progreso
-                </p>
-                <p
-                  className={`text-sm font-bold ${
-                    item.delta_weight_kg > 0
-                      ? 'text-green-600 dark:text-green-400'
-                      : item.delta_weight_kg < 0
-                      ? 'text-red-600 dark:text-red-400'
-                      : 'text-gray-500 dark:text-gray-400'
-                  }`}
-                >
-                  {item.delta_weight_kg > 0
-                    ? `+${item.delta_weight_kg}kg ↑`
-                    : item.delta_weight_kg < 0
-                    ? `${item.delta_weight_kg}kg ↓`
-                    : item.delta_weight_kg === 0
-                    ? '= igual'
-                    : '—'}
-                </p>
-              </div>
-              <div className="rounded-lg bg-gray-50 dark:bg-gray-900/50 p-3">
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide font-semibold mb-1">
-                  Último peso
-                </p>
-                <p className="text-lg font-bold text-[#DC2626]">
-                  {item.current_weight != null ? `${item.current_weight} kg` : '—'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/* ── Tab: Por día ── */
+/* ── Progreso por día ── */
 
 function TabPorDia({ data, week }: { data: DayProgress[]; week: number }) {
   const [selectedDay, setSelectedDay] = useState<DayProgress | null>(null)
