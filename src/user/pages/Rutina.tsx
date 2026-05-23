@@ -93,6 +93,7 @@ export default function UserRutina() {
           sets,
           reps,
           weight_kg,
+          sets_data,
           rest_seconds,
           order_index,
           exercise:exercises(id, name, muscle_group, video_url, video_type)
