@@ -328,6 +328,7 @@ export type Database = {
           rest_seconds: number | null
           routine_id: string
           sets: number
+          sets_data: Json | null
           weight_kg: number | null
         }
         Insert: {
@@ -338,6 +339,7 @@ export type Database = {
           rest_seconds?: number | null
           routine_id: string
           sets?: number
+          sets_data?: Json | null
           weight_kg?: number | null
         }
         Update: {
@@ -348,6 +350,7 @@ export type Database = {
           rest_seconds?: number | null
           routine_id?: string
           sets?: number
+          sets_data?: Json | null
           weight_kg?: number | null
         }
         Relationships: [
@@ -371,9 +374,11 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string
+          day_number: number | null
           description: string | null
           id: string
           is_template: boolean
+          member_id: string | null
           name: string
         }
         Insert: {

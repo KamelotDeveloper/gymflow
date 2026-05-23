@@ -1,0 +1,1 @@
+ALTER TABLE routine_exercises ADD COLUMN IF NOT EXISTS sets_data JSONB NULL;
