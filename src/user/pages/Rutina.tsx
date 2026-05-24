@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useAuthContext } from '../../shared/components/AuthContext'
 import { supabase } from '../../shared/lib/supabase'
 import UserLayout from '../../shared/components/UserLayout'
@@ -72,6 +72,14 @@ export default function UserRutina() {
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState(false)
   const [currentWeek, setCurrentWeek] = useState(1)
+
+  // Refs to always have latest state in handleSave (avoid stale closure)
+  const perSetInputsRef = useRef(perSetInputs)
+  perSetInputsRef.current = perSetInputs
+  const inputsRef = useRef(inputs)
+  inputsRef.current = inputs
+  const exercisesRef = useRef(exercises)
+  exercisesRef.current = exercises
 
   useEffect(() => {
     if (!profile?.id) return
@@ -248,13 +256,16 @@ export default function UserRutina() {
         .eq('profile_id', pid)
       const allSessionIds: string[] = allSessions?.map((s: any) => s.id) ?? []
 
-      // 2. DEBUG: check what perSetInputs looks like
-      console.log('🔍 perSetInputs antes del loop:', JSON.stringify(perSetInputs))
-      console.log('🔍 exercises:', exercises.map(e => ({ id: e.id, name: e.exercise.name })))
+      // 2. DEBUG: check what perSetInputs looks like (using refs for latest state)
+      const currentPerSetInputs = perSetInputsRef.current
+      const currentExercises = exercisesRef.current
+      const currentInputs = inputsRef.current
+      console.log('🔍 perSetInputs (ref) antes del loop:', JSON.stringify(currentPerSetInputs))
+      console.log('🔍 exercises (ref):', currentExercises.map(e => ({ id: e.id, name: e.exercise.name })))
       
       // 2. For each exercise, insert workout_log rows
-      for (const ex of exercises) {
-        const perSet = perSetInputs[ex.id]
+      for (const ex of currentExercises) {
+        const perSet = currentPerSetInputs[ex.id]
         console.log('🔍 ex.id:', ex.id, 'perSet:', perSet, 'perSet?.length:', perSet?.length)
 
         if (perSet && perSet.length > 0) {
@@ -292,7 +303,7 @@ export default function UserRutina() {
           }
         } else {
           // ── Single-field mode: insert 1 row (legacy) ──
-          const input = inputs.find((i) => i.routine_exercise_id === ex.id)
+          const input = currentInputs.find((i) => i.routine_exercise_id === ex.id)
           if (!input) continue
 
           const setsNum = parseInt(input.sets, 10)
