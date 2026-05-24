@@ -15,7 +15,7 @@ WITH baseline AS (
   FROM workout_logs wl
   JOIN workout_sessions ws ON ws.id = wl.session_id
   WHERE wl.is_baseline = true
-  ORDER BY wl.exercise_id, COALESCE(wl.set_number, 0), ws.session_date ASC
+  ORDER BY wl.exercise_id, COALESCE(wl.set_number, 0), ws.created_at ASC
 ),
 current_data AS (
   SELECT DISTINCT ON (wl.exercise_id, COALESCE(wl.set_number, 0))
@@ -28,7 +28,7 @@ current_data AS (
   FROM workout_logs wl
   JOIN workout_sessions ws ON ws.id = wl.session_id
   WHERE wl.is_baseline = false
-  ORDER BY wl.exercise_id, COALESCE(wl.set_number, 0), ws.session_date DESC
+  ORDER BY wl.exercise_id, COALESCE(wl.set_number, 0), ws.created_at DESC
 )
 SELECT
   COALESCE(b.profile_id, c.profile_id) AS profile_id,
