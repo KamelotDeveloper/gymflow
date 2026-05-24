@@ -248,9 +248,14 @@ export default function UserRutina() {
         .eq('profile_id', pid)
       const allSessionIds: string[] = allSessions?.map((s: any) => s.id) ?? []
 
+      // 2. DEBUG: check what perSetInputs looks like
+      console.log('🔍 perSetInputs antes del loop:', JSON.stringify(perSetInputs))
+      console.log('🔍 exercises:', exercises.map(e => ({ id: e.id, name: e.exercise.name })))
+      
       // 2. For each exercise, insert workout_log rows
       for (const ex of exercises) {
         const perSet = perSetInputs[ex.id]
+        console.log('🔍 ex.id:', ex.id, 'perSet:', perSet, 'perSet?.length:', perSet?.length)
 
         if (perSet && perSet.length > 0) {
           // ── Per-set mode: insert N rows ──
@@ -258,7 +263,11 @@ export default function UserRutina() {
             const repsNum = parseInt(ps.reps_done, 10)
             const weightNum = parseFloat(ps.weight_used_kg)
 
-            if (isNaN(repsNum) && isNaN(weightNum)) continue
+            if (isNaN(repsNum) && isNaN(weightNum)) {
+              console.log('⏭️ set skipped (no data):', { ex: ex.exercise.id, set: ps.set_number, reps_done: ps.reps_done, weight_used_kg: ps.weight_used_kg })
+              continue
+            }
+            console.log('📝 insertando log:', { exercise_id: ex.exercise.id, set_number: ps.set_number, reps_done: repsNum, weight_used_kg: weightNum })
 
             // Per-set baseline detection: check (exercise_id, set_number) pair
             const { data: existingBaseline } = await (supabase as any)
