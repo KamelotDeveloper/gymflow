@@ -222,7 +222,8 @@ export default function UserRutina() {
       const todayISO = new Date().toISOString().split('T')[0]
 
       // 1. Create workout_session
-      const { data: session } = await (supabase as any)
+      console.log('📝 Creando sesión...', { pid, routine_id: selectedRoutine.id })
+      const { data: session, error: sessionErr } = await (supabase as any)
         .from('workout_sessions')
         .insert({
           profile_id: pid,
@@ -233,7 +234,12 @@ export default function UserRutina() {
         .select()
         .single()
 
+      if (sessionErr) {
+        console.error('❌ Error al crear sesión:', sessionErr)
+        throw new Error(`Error al crear sesión: ${sessionErr.message}`)
+      }
       if (!session) throw new Error('No se pudo crear la sesión')
+      console.log('✅ Sesión creada:', session.id)
 
       // Get all session IDs for this profile (for baseline check)
       const { data: allSessions } = await (supabase as any)
@@ -265,7 +271,7 @@ export default function UserRutina() {
 
             const isBaseline = !existingBaseline || existingBaseline.length === 0
 
-            await (supabase as any).from('workout_logs').insert({
+            const { error: logErr } = await (supabase as any).from('workout_logs').insert({
               session_id: session.id,
               exercise_id: ex.exercise.id,
               set_number: ps.set_number,
@@ -273,6 +279,7 @@ export default function UserRutina() {
               weight_used_kg: isNaN(weightNum) ? 0 : weightNum,
               is_baseline: isBaseline,
             })
+            if (logErr) console.error('❌ Error insert log:', logErr, { ex: ex.exercise.id, set: ps.set_number })
           }
         } else {
           // ── Single-field mode: insert 1 row (legacy) ──
@@ -296,7 +303,7 @@ export default function UserRutina() {
 
           const isBaseline = !existingBaseline || existingBaseline.length === 0
 
-          await (supabase as any).from('workout_logs').insert({
+          const { error: logErr } = await (supabase as any).from('workout_logs').insert({
             session_id: session.id,
             exercise_id: input.exercise_id,
             set_number: isNaN(setsNum) ? 1 : setsNum,
@@ -304,6 +311,7 @@ export default function UserRutina() {
             weight_used_kg: isNaN(weightNum) ? 0 : weightNum,
             is_baseline: isBaseline,
           })
+          if (logErr) console.error('❌ Error insert log legacy:', logErr, { ex: input.exercise_id })
         }
       }
 
