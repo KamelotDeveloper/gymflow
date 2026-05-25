@@ -26,6 +26,12 @@ type Exercise = {
   video_url: string
 }
 
+type ProgressEntry = {
+  set_number: number
+  current_reps: number | null
+  current_weight: number | null
+}
+
 type SetDatum = {
   set: number
   reps: number
@@ -77,6 +83,8 @@ export default function Routines() {
   const [exercisesLoading, setExercisesLoading] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [perSetExpanded, setPerSetExpanded] = useState<Set<string>>(new Set())
+  const [memberProgress, setMemberProgress] = useState<Record<string, ProgressEntry[]>>({})
+  const [progressLoading, setProgressLoading] = useState(false)
 
   // ── Create form ──
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -121,6 +129,7 @@ export default function Routines() {
       fetchRoutineExercises(selectedRoutine.id)
     } else {
       setRoutineExercises([])
+      setMemberProgress({})
     }
   }, [selectedRoutine])
 
@@ -178,6 +187,7 @@ export default function Routines() {
 
   const fetchRoutineExercises = async (routineId: string) => {
     setExercisesLoading(true)
+    setMemberProgress({})
     try {
       const { data } = await (supabase.from('routine_exercises') as any)
         .select(
@@ -186,10 +196,44 @@ export default function Routines() {
         .eq('routine_id', routineId)
         .order('order_index', { ascending: true })
       setRoutineExercises(data ?? [])
+
+      // Fetch member progress for each exercise if routine has a member
+      const routine = selectedRoutine
+      if (routine?.member_id && data && data.length > 0) {
+        fetchMemberProgress(routine.member_id, data.map((re: any) => re.exercise_id))
+      }
     } catch {
       console.error('Error al cargar ejercicios')
     } finally {
       setExercisesLoading(false)
+    }
+  }
+
+  const fetchMemberProgress = async (memberId: string, exerciseIds: string[]) => {
+    setProgressLoading(true)
+    try {
+      const { data } = await (supabase.from('progress_comparison') as any)
+        .select('exercise_id, set_number, current_reps, current_weight')
+        .eq('profile_id', memberId)
+        .in('exercise_id', exerciseIds)
+        .order('set_number', { ascending: true })
+
+      if (data) {
+        const grouped: Record<string, ProgressEntry[]> = {}
+        for (const entry of data) {
+          if (!grouped[entry.exercise_id]) grouped[entry.exercise_id] = []
+          grouped[entry.exercise_id].push({
+            set_number: entry.set_number,
+            current_reps: entry.current_reps,
+            current_weight: entry.current_weight,
+          })
+        }
+        setMemberProgress(grouped)
+      }
+    } catch {
+      console.error('Error al cargar progreso del miembro')
+    } finally {
+      setProgressLoading(false)
     }
   }
 
@@ -453,9 +497,38 @@ export default function Routines() {
     try {
       // Leer valor actual del state para evitar stale closure
       const current = routineExercises.find((r) => r.id === re.id) ?? re
+      const name = current.exercise.name.trim()
+      if (!name) return
+
       await (supabase.from('exercises') as any)
-        .update({ name: current.exercise.name })
+        .update({ name })
         .eq('id', current.exercise.id)
+
+      // Auto-fill video_url si está vacío y existe otro ejercicio con el mismo nombre
+      if (!current.exercise.video_url) {
+        const { data: existing } = await (supabase.from('exercises') as any)
+          .select('video_url')
+          .eq('name', name)
+          .not('video_url', 'eq', '')
+          .not('id', 'eq', current.exercise.id)
+          .limit(1)
+          .maybeSingle()
+
+        if (existing?.video_url) {
+          await (supabase.from('exercises') as any)
+            .update({ video_url: existing.video_url })
+            .eq('id', current.exercise.id)
+
+          // Actualizar estado local
+          setRoutineExercises((prev) =>
+            prev.map((r) =>
+              r.id === re.id
+                ? { ...r, exercise: { ...r.exercise, video_url: existing.video_url } }
+                : r,
+            ),
+          )
+        }
+      }
     } catch {
       console.error('Error al guardar nombre')
     }
@@ -1482,6 +1555,16 @@ export default function Routines() {
                           </div>
                         </div>
 
+                        {/* Progress reference (mobile) */}
+                        {memberProgress[re.exercise_id] && memberProgress[re.exercise_id].length > 0 && (
+                          <div style={{ backgroundColor: '#f0fdf4', borderRadius: 8, padding: '6px 10px', fontSize: 11, color: '#16a34a', lineHeight: 1.6 }}>
+                            <span style={{ fontWeight: 600 }}>Último:</span>{' '}
+                            {memberProgress[re.exercise_id].map(p =>
+                              `S${p.set_number}: ${p.current_weight ?? '—'}kg × ${p.current_reps ?? '—'} reps`
+                            ).join(' · ')}
+                          </div>
+                        )}
+
                           {/* Per-set collapsible section (mobile) */}
                           {re.sets > 1 && (
                             <div>
@@ -1879,6 +1962,17 @@ export default function Routines() {
                                   </IconButton>
                                 </Td>
                               </tr>
+                              {/* Progress reference row */}
+                              {!isExpanded && memberProgress[re.exercise_id] && memberProgress[re.exercise_id].length > 0 && (
+                                <tr style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#f0fdf4' }}>
+                                  <td colSpan={9} style={{ padding: '4px 16px', fontSize: 11, color: '#16a34a', lineHeight: 1.6 }}>
+                                    <span style={{ fontWeight: 600 }}>Último:</span>{' '}
+                                    {memberProgress[re.exercise_id].map(p =>
+                                      `S${p.set_number}: ${p.current_weight ?? '—'}kg × ${p.current_reps ?? '—'} reps`
+                                    ).join(' · ')}
+                                  </td>
+                                </tr>
+                              )}
                               {/* Per-set sub-rows cuando está expandido */}
                               {isExpanded &&
                                 re.sets_data?.map((setDatum, setIdx) => (
