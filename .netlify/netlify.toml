@@ -1,5 +1,6 @@
+headersOrigin = "config"
+redirectsOrigin = "config"
 plugins = []
-headers = []
 
 [functions]
 
@@ -7,11 +8,12 @@ headers = []
 
 [build]
 publish = "C:\\Users\\Giuliano\\Desktop\\DocumentoRespaldo\\apps\\GyM app\\dist"
-publishOrigin = "ui"
-commandOrigin = "ui"
+publishOrigin = "config"
+commandOrigin = "config"
 command = "pnpm run build"
 
 [build.environment]
+NODE_VERSION = "22"
 
 [build.processing]
 
@@ -24,6 +26,14 @@ command = "pnpm run build"
 [build.processing.js]
 
 [build.services]
+
+[[headers]]
+for = "/*"
+
+[headers.values]
+X-Frame-Options = "DENY"
+X-Content-Type-Options = "nosniff"
+Referrer-Policy = "strict-origin-when-cross-origin"
 
 [[redirects]]
 from = "/*"
