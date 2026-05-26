@@ -3,6 +3,10 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// Absolute path to project root (where vite.config.ts lives)
+const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 
 function esToolkitCompatPlugin(): import('vite').Plugin {
   // Pre-load mapping from compat module name → dist ESM path + export name
@@ -10,7 +14,7 @@ function esToolkitCompatPlugin(): import('vite').Plugin {
   function ensureMapping() {
     if (mapping) return
     mapping = new Map()
-    const compatDir = path.resolve('node_modules/es-toolkit/compat')
+    const compatDir = path.resolve(projectRoot, 'node_modules/es-toolkit/compat')
     if (!fs.existsSync(compatDir)) return
     for (const file of fs.readdirSync(compatDir)) {
       if (!file.endsWith('.js')) continue
@@ -18,7 +22,7 @@ function esToolkitCompatPlugin(): import('vite').Plugin {
       const m = content.match(/require\('\.\.\/dist\/compat\/(.*?)\.js'\)\.(\w+)/)
       if (m) {
         mapping.set(file.replace(/\.js$/, ''), {
-          esmPath: path.resolve('node_modules/es-toolkit/dist/compat', `${m[1]}.mjs`),
+          esmPath: path.resolve(projectRoot, 'node_modules/es-toolkit/dist/compat', `${m[1]}.mjs`),
           exportName: m[2],
         })
       }
