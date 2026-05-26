@@ -84,7 +84,7 @@ export default function Routines() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [perSetExpanded, setPerSetExpanded] = useState<Set<string>>(new Set())
   const [memberProgress, setMemberProgress] = useState<Record<string, ProgressEntry[]>>({})
-  const [progressLoading, setProgressLoading] = useState(false)
+  const [, setProgressLoading] = useState(false)
 
   // ── Create form ──
   const [showCreateForm, setShowCreateForm] = useState(false)
