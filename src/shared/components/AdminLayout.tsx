@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, type ReactNode, type ComponentType } 
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuthContext } from './AuthContext'
 import {
+  LayoutDashboard,
   Users,
   ClipboardList,
   Dumbbell,
@@ -24,6 +25,7 @@ type NavItem = {
 }
 
 const navItems: NavItem[] = [
+  { icon: LayoutDashboard, label: 'Dashboard', path: '/admin/dashboard' },
   { icon: Users, label: 'Miembros', path: '/admin/members' },
   { icon: ClipboardList, label: 'Rutinas', path: '/admin/routines' },
   { icon: Dumbbell, label: 'Ejercicios', path: '/admin/exercises' },
