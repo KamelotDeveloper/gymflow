@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AdminLayout from '../../shared/components/AdminLayout'
 import { supabase } from '../../shared/lib/supabase'
@@ -6,19 +6,29 @@ import {
   Users,
   DollarSign,
   Clock,
-  Dumbbell,
+  TrendingUp,
+  MessageCircle,
   ChevronRight,
 } from 'lucide-react'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts'
 
 /* ── Types ── */
 
 type KpiData = {
   activeMembers: number | null
   monthlyRevenue: number | null
-  pendingCount: number | null
-  pendingAmount: number | null
-  workoutsToday: number | null
-  activeMembersToday: number | null
+  delinquencyAmount: number | null
+  newMembersMonth: number | null
+  growthPct: number | null
 }
 
 type ExpiringMember = {
@@ -33,6 +43,7 @@ type InactiveMember = {
   id: string
   full_name: string
   last_session: string | null
+  phone: string | null
 }
 
 /* ── Helpers ── */
@@ -60,17 +71,6 @@ const daysAgo = (n: number): Date => {
 const daysSince = (dateStr: string): number =>
   Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
 
-/* ── Constants ── */
-
-const CHART_W = 800
-const CHART_H = 200
-const PAD_LEFT = 36
-const PAD_TOP = 8
-const PAD_BOTTOM = 22
-const PAD_RIGHT = 8
-const INNER_W = CHART_W - PAD_LEFT - PAD_RIGHT
-const INNER_H = CHART_H - PAD_TOP - PAD_BOTTOM
-
 /* ── Component ── */
 
 export default function Dashboard() {
@@ -82,16 +82,15 @@ export default function Dashboard() {
   const [kpiData, setKpiData] = useState<KpiData>({
     activeMembers: null,
     monthlyRevenue: null,
-    pendingCount: null,
-    pendingAmount: null,
-    workoutsToday: null,
-    activeMembersToday: null,
+    delinquencyAmount: null,
+    newMembersMonth: null,
+    growthPct: null,
   })
   const [kpiLoading, setKpiLoading] = useState(true)
 
-  const [chartDayCounts, setChartDayCounts] = useState<
-    Record<string, number>
-  >({})
+  const [chartMonthsData, setChartMonthsData] = useState<
+    { month: string; altas: number; bajas: number }[]
+  >([])
   const [chartLoading, setChartLoading] = useState(true)
 
   const [expiring, setExpiring] = useState<ExpiringMember[]>([])
@@ -117,13 +116,15 @@ export default function Dashboard() {
     const startOfMonth = daysAgo(0)
     startOfMonth.setDate(1)
     const sevenDays = daysAgo(-7)
-    const thirtyDaysAgo = daysAgo(30)
     const sixtyDaysAgo = daysAgo(60)
+    const sixMonthsAgo = new Date()
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+    sixMonthsAgo.setHours(0, 0, 0, 0)
 
     const results = await Promise.allSettled([
       /* 0 — Active members */
-      (supabase
-        .from('memberships') as any)
+      (supabase as any)
+        .from('memberships')
         .select('profile_id')
         .or('status.eq.active,admin_override.eq.true')
         .gte('end_date', todayStr),
@@ -135,29 +136,31 @@ export default function Dashboard() {
         .eq('status', 'confirmed')
         .gte('confirmed_at', startOfMonth.toISOString()),
 
-      /* 2 — Pending payments */
+      /* 2 — Pending payments (delinquency) */
       supabase
         .from('payment_transactions')
         .select('id, amount')
         .eq('status', 'pending'),
 
-      /* 3 — Workouts today */
+      /* 3 — Confirmed payments last 6 months (growth + altas) */
       supabase
-        .from('workout_sessions')
-        .select('id, profile_id')
-        .eq('session_date', todayStr),
+        .from('payment_transactions')
+        .select('profile_id, amount, confirmed_at')
+        .eq('status', 'confirmed')
+        .gte('confirmed_at', sixMonthsAgo.toISOString())
+        .order('confirmed_at'),
 
-      /* 4 — New members last 30 days */
+      /* 4 — Expired memberships last 6 months (bajas) */
       supabase
-        .from('profiles')
-        .select('created_at')
-        .eq('role', 'member')
-        .gte('created_at', thirtyDaysAgo.toISOString())
-        .order('created_at'),
+        .from('memberships')
+        .select('profile_id, end_date, status')
+        .eq('status', 'expired')
+        .gte('end_date', sixMonthsAgo.toISOString())
+        .order('end_date'),
 
       /* 5 — Expiring members next 7 days */
-      (supabase
-        .from('memberships') as any)
+      (supabase as any)
+        .from('memberships')
         .select(
           `profile_id,
            end_date,
@@ -173,7 +176,7 @@ export default function Dashboard() {
       /* 6 — All member profiles (for inactivity) */
       supabase
         .from('profiles')
-        .select('id, full_name')
+        .select('id, full_name, phone')
         .eq('role', 'member'),
 
       /* 7 — Recent sessions (for inactivity) */
@@ -188,8 +191,8 @@ export default function Dashboard() {
       activeResult,
       revenueResult,
       pendingResult,
-      workoutsResult,
-      newMembersResult,
+      confirmedTxResult,
+      expiredMembershipsResult,
       expiringResult,
       membersResult,
       sessionsResult,
@@ -199,10 +202,9 @@ export default function Dashboard() {
     const kpi: KpiData = {
       activeMembers: null,
       monthlyRevenue: null,
-      pendingCount: null,
-      pendingAmount: null,
-      workoutsToday: null,
-      activeMembersToday: null,
+      delinquencyAmount: null,
+      newMembersMonth: null,
+      growthPct: null,
     }
 
     if (activeResult.status === 'fulfilled') {
@@ -220,40 +222,73 @@ export default function Dashboard() {
     }
     if (pendingResult.status === 'fulfilled') {
       const rows = (pendingResult.value as any).data ?? []
-      kpi.pendingCount = rows.length
-      kpi.pendingAmount = rows.reduce(
+      kpi.delinquencyAmount = rows.reduce(
         (s: number, r: any) => s + (r.amount ?? 0),
         0,
       )
     }
-    if (workoutsResult.status === 'fulfilled') {
-      const rows = (workoutsResult.value as any).data ?? []
-      kpi.workoutsToday = rows.length
-      kpi.activeMembersToday = new Set(
-        rows.map((r: any) => r.profile_id),
-      ).size
+
+    /* ── Growth & Chart Altas ── */
+    let altasByMonth: Record<string, number> = {}
+    if (confirmedTxResult.status === 'fulfilled') {
+      const rows = (confirmedTxResult.value as any).data ?? []
+
+      // Build first-payment-per-member map (MIN confirmed_at)
+      const firstPaymentMap = new Map<string, string>()
+      for (const r of rows) {
+        const pid = r.profile_id
+        const ca = r.confirmed_at
+        if (!pid || !ca) continue
+        const existing = firstPaymentMap.get(pid)
+        if (!existing || ca < existing) {
+          firstPaymentMap.set(pid, ca)
+        }
+      }
+
+      const currentMonth = todayISO().substring(0, 7)
+      let newCount = 0
+      for (const [, confirmedAt] of firstPaymentMap) {
+        const month = confirmedAt.substring(0, 7)
+        if (month === currentMonth) newCount++
+        altasByMonth[month] = (altasByMonth[month] || 0) + 1
+      }
+
+      kpi.newMembersMonth = newCount
+      kpi.growthPct =
+        kpi.activeMembers && kpi.activeMembers > 0
+          ? Math.round((newCount / kpi.activeMembers) * 1000) / 10
+          : 0
     }
+
     setKpiData(kpi)
     setKpiLoading(false)
 
     /* ── Chart ── */
-    if (newMembersResult.status === 'fulfilled') {
-      const raw = ((newMembersResult.value as any).data ?? []) as {
-        created_at: string
-      }[]
-      const counts: Record<string, number> = {}
-      const today = new Date()
-      for (let i = 29; i >= 0; i--) {
-        const d = new Date(today)
-        d.setDate(d.getDate() - i)
-        counts[d.toISOString().split('T')[0]] = 0
-      }
-      for (const entry of raw) {
-        const key = entry.created_at?.split('T')[0]
-        if (key && counts[key] !== undefined) counts[key]++
-      }
-      setChartDayCounts(counts)
+    const months: string[] = []
+    const now = new Date()
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      months.push(`${y}-${m}`)
     }
+
+    const bajasByMonth: Record<string, number> = {}
+    if (expiredMembershipsResult.status === 'fulfilled') {
+      const rows = (expiredMembershipsResult.value as any).data ?? []
+      for (const r of rows) {
+        const month = r.end_date?.substring(0, 7)
+        if (month) bajasByMonth[month] = (bajasByMonth[month] || 0) + 1
+      }
+    }
+
+    setChartMonthsData(
+      months.map((m) => ({
+        month: m,
+        altas: altasByMonth[m] || 0,
+        bajas: bajasByMonth[m] || 0,
+      })),
+    )
     setChartLoading(false)
 
     /* ── Expiring ── */
@@ -274,7 +309,7 @@ export default function Dashboard() {
     /* ── Inactive ── */
     if (membersResult.status === 'fulfilled') {
       const allMembers = ((membersResult.value as any).data ??
-        []) as { id: string; full_name: string }[]
+        []) as { id: string; full_name: string; phone: string | null }[]
 
       const lastSessionMap = new Map<string, string>()
       if (sessionsResult.status === 'fulfilled') {
@@ -298,6 +333,7 @@ export default function Dashboard() {
             id: m.id,
             full_name: m.full_name,
             last_session: lastDate ?? null,
+            phone: m.phone ?? null,
           })
         }
       }
@@ -305,22 +341,6 @@ export default function Dashboard() {
     }
     setInactiveLoading(false)
   }
-
-  /* ── Derived chart data ── */
-
-  const chartSummary = useMemo(() => {
-    const entries = Object.entries(chartDayCounts)
-    const total30 = entries.reduce((s, [, c]) => s + c, 0)
-    const last7 = entries
-      .slice(-7)
-      .reduce((s, [, c]) => s + c, 0)
-    return { last7, total30 }
-  }, [chartDayCounts])
-
-  const chartHasData = useMemo(
-    () => Object.values(chartDayCounts).some((v) => v > 0),
-    [chartDayCounts],
-  )
 
   /* ── Render ── */
 
@@ -402,41 +422,41 @@ export default function Dashboard() {
                       style={{ color: '#D97706' }}
                     />
                   }
-                  label="Pagos pendientes"
+                  label="Morosidad Activa"
                   value={
-                    kpiData.pendingCount !== null
-                      ? `${kpiData.pendingCount} · ${formatCurrency(kpiData.pendingAmount ?? 0)}`
+                    kpiData.delinquencyAmount !== null
+                      ? formatCurrency(kpiData.delinquencyAmount)
                       : '-'
                   }
                   subtitle={null}
-                  hasError={kpiData.pendingCount === null}
+                  hasError={kpiData.delinquencyAmount === null}
                 />
                 <KpiCard
                   icon={
-                    <Dumbbell
+                    <TrendingUp
                       size={20}
-                      style={{ color: '#7C3AED' }}
+                      style={{ color: '#059669' }}
                     />
                   }
-                  label="Entrenos hoy"
+                  label="Crecimiento"
                   value={
-                    kpiData.workoutsToday !== null
-                      ? `${kpiData.workoutsToday} sesiones`
+                    kpiData.newMembersMonth !== null
+                      ? `${kpiData.newMembersMonth} nuevos`
                       : '-'
                   }
                   subtitle={
-                    kpiData.activeMembersToday !== null
-                      ? `${kpiData.activeMembersToday} miembros`
+                    kpiData.growthPct !== null
+                      ? `${kpiData.growthPct}% vs activos`
                       : null
                   }
-                  hasError={kpiData.workoutsToday === null}
+                  hasError={kpiData.newMembersMonth === null}
                 />
               </>
             )}
           </div>
         </section>
 
-        {/* ═══ New Members Chart ═══ */}
+        {/* ═══ Retention Chart ═══ */}
         <section>
           <h2
             style={{
@@ -446,26 +466,64 @@ export default function Dashboard() {
               color: '#111827',
             }}
           >
-            Nuevos Miembros
+            Retención Mensual
           </h2>
           {chartLoading ? (
-            <ChartSkeleton />
-          ) : chartHasData ? (
-            <>
-              <p
+            <div style={cardStyle}>
+              <div
+                className="animate-pulse"
                 style={{
-                  margin: '0 0 10px',
-                  fontSize: 13,
-                  color: '#6b7280',
+                  height: 250,
+                  backgroundColor: '#e5e7eb',
+                  borderRadius: 8,
+                  margin: 16,
                 }}
-              >
-                7 días: {chartSummary.last7} · 30 días:{' '}
-                {chartSummary.total30}
-              </p>
-              <BarChart data={chartDayCounts} />
-            </>
+              />
+            </div>
+          ) : chartMonthsData.length > 0 ? (
+            <div style={cardStyle}>
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={chartMonthsData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fontSize: 12, fill: '#9ca3af' }}
+                    tickFormatter={(m: string) => {
+                      const [y, mo] = m.split('-')
+                      const months = [
+                        'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+                        'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dec',
+                      ]
+                      return `${months[parseInt(mo) - 1]} ${y}`
+                    }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 12, fill: '#9ca3af' }}
+                    allowDecimals={false}
+                  />
+                  <Tooltip />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="altas"
+                    stroke="#059669"
+                    strokeWidth={2}
+                    name="Altas"
+                    dot={{ r: 3 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="bajas"
+                    stroke="#DC2626"
+                    strokeWidth={2}
+                    name="Bajas"
+                    dot={{ r: 3 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           ) : (
-            <EmptyCard message="Sin registros nuevos en los últimos 30 días" />
+            <EmptyCard message="Sin datos de retención en los últimos 6 meses" />
           )}
         </section>
 
@@ -613,21 +671,66 @@ export default function Dashboard() {
                   >
                     {m.full_name}
                   </span>
-                  <span
+                  <div
                     style={{
-                      fontSize: 13,
-                      color: m.last_session
-                        ? '#DC2626'
-                        : '#9ca3af',
-                      fontStyle: m.last_session
-                        ? 'normal'
-                        : 'italic',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
                     }}
                   >
-                    {m.last_session
-                      ? `${daysSince(m.last_session)} días sin actividad`
-                      : 'Nunca entrenó'}
-                  </span>
+                    <span
+                      style={{
+                        fontSize: 13,
+                        color: m.last_session
+                          ? '#DC2626'
+                          : '#9ca3af',
+                        fontStyle: m.last_session
+                          ? 'normal'
+                          : 'italic',
+                      }}
+                    >
+                      {m.last_session
+                        ? `Hace ${daysSince(m.last_session)} días`
+                        : 'Nunca entrenó'}
+                    </span>
+                    {m.phone ? (
+                      <a
+                        href={`https://wa.me/${m.phone.replace(/[^0-9]/g, '')}?text=Hola%20${encodeURIComponent(m.full_name)}%2C%20queremos%20verte%20de%20vuelta%20en%20el%20gimnasio%21`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Contactar por WhatsApp"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          backgroundColor: '#f0fdf4',
+                          color: '#22c55e',
+                          border: 'none',
+                          cursor: 'pointer',
+                          textDecoration: 'none',
+                        }}
+                      >
+                        <MessageCircle size={16} />
+                      </a>
+                    ) : (
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          color: '#d1d5db',
+                        }}
+                      >
+                        <MessageCircle size={16} />
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -772,133 +875,6 @@ function KpiSkeleton() {
           borderRadius: 4,
         }}
       />
-    </div>
-  )
-}
-
-/* ════════════════════════ Chart Components ════════════════════════ */
-
-function BarChart({ data }: { data: Record<string, number> }) {
-  const entries = Object.entries(data)
-  const maxVal = Math.max(...Object.values(data), 1)
-  const barW = INNER_W / entries.length
-
-  return (
-    <div style={cardStyle}>
-      <svg
-        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-        style={{
-          width: '100%',
-          height: 'auto',
-          display: 'block',
-        }}
-      >
-        {/* Y axis line */}
-        <line
-          x1={PAD_LEFT}
-          y1={PAD_TOP}
-          x2={PAD_LEFT}
-          y2={CHART_H - PAD_BOTTOM}
-          stroke="#e5e7eb"
-          strokeWidth={1}
-        />
-        {/* Baseline */}
-        <line
-          x1={PAD_LEFT}
-          y1={CHART_H - PAD_BOTTOM}
-          x2={CHART_W - PAD_RIGHT}
-          y2={CHART_H - PAD_BOTTOM}
-          stroke="#e5e7eb"
-          strokeWidth={1}
-        />
-        {/* Y axis labels */}
-        <text
-          x={PAD_LEFT - 6}
-          y={CHART_H - PAD_BOTTOM + 4}
-          textAnchor="end"
-          fill="#9ca3af"
-          fontSize={10}
-        >
-          0
-        </text>
-        <text
-          x={PAD_LEFT - 6}
-          y={PAD_TOP + 4}
-          textAnchor="end"
-          fill="#9ca3af"
-          fontSize={10}
-        >
-          {maxVal}
-        </text>
-        {/* Bars */}
-        {entries.map(([day, count], i) => {
-          const h = (count / maxVal) * INNER_H
-          const x = PAD_LEFT + i * barW + 1
-          return (
-            <g key={day}>
-              <rect
-                x={x}
-                y={CHART_H - PAD_BOTTOM - h}
-                width={Math.max(barW - 2, 2)}
-                height={Math.max(h, 0)}
-                fill="#DC2626"
-                rx={2}
-              />
-              {/* X axis label every 5th day */}
-              {i % 5 === 0 && (
-                <text
-                  x={x + barW / 2}
-                  y={CHART_H - PAD_BOTTOM + 14}
-                  textAnchor="middle"
-                  fill="#9ca3af"
-                  fontSize={8}
-                >
-                  {new Date(day + 'T12:00:00').getDate()}
-                </text>
-              )}
-              {/* Value on hover target (transparent wider rect for tooltip) */}
-              <title>
-                {new Date(
-                  day + 'T12:00:00',
-                ).toLocaleDateString('es-ES', {
-                  day: '2-digit',
-                  month: 'short',
-                })}
-                : {count} nuevo{count !== 1 ? 's' : ''}
-              </title>
-            </g>
-          )
-        })}
-      </svg>
-    </div>
-  )
-}
-
-function ChartSkeleton() {
-  return (
-    <div style={cardStyle}>
-      <div
-        className="animate-pulse"
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: 3,
-          height: 160,
-          padding: '16px 24px',
-        }}
-      >
-        {Array.from({ length: 30 }).map((_, i) => (
-          <div
-            key={i}
-            style={{
-              flex: 1,
-              height: `${20 + Math.random() * 80}%`,
-              backgroundColor: '#e5e7eb',
-              borderRadius: '2px 2px 0 0',
-            }}
-          />
-        ))}
-      </div>
     </div>
   )
 }
