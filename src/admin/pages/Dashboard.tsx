@@ -1,12 +1,13 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AdminLayout from '../../shared/components/AdminLayout'
 import { supabase } from '../../shared/lib/supabase'
 import {
   Users,
   DollarSign,
-  AlertTriangle,
-  CalendarCheck,
+  Clock,
+  TrendingUp,
+  MessageCircle,
   ChevronRight,
   MessageCircle,
 } from 'lucide-react'
@@ -17,8 +18,8 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   Legend,
+  ResponsiveContainer,
 } from 'recharts'
 
 /* ── Types ── */
@@ -26,10 +27,9 @@ import {
 type KpiData = {
   activeMembers: number | null
   monthlyRevenue: number | null
-  overdueAmount: number | null
-  overdueCount: number | null
-  attendanceToday: number | null
-  attendancePct: number | null
+  delinquencyAmount: number | null
+  newMembersMonth: number | null
+  growthPct: number | null
 }
 
 type ExpiringMember = {
@@ -45,13 +45,6 @@ type InactiveMember = {
   full_name: string
   last_session: string | null
   phone: string | null
-}
-
-type ChartDayEntry = {
-  dia: number
-  dateStr: string
-  Altas: number
-  Bajas: number
 }
 
 /* ── Helpers ── */
@@ -81,47 +74,7 @@ const daysSince = (dateStr: string): number =>
     (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24),
   )
 
-const generateLast30Days = (): { dateStr: string; day: number }[] => {
-  const days: { dateStr: string; day: number }[] = []
-  const today = new Date()
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(today)
-    d.setDate(d.getDate() - i)
-    const iso = d.toISOString().split('T')[0]
-    days.push({ dateStr: iso, day: d.getDate() })
-  }
-  return days
-}
-
-const formatWhatsAppUrl = (phone: string, name: string): string => {
-  const cleaned = phone.replace(/\D/g, '')
-  const msg = encodeURIComponent(
-    `¡Hola ${name}! Somos de GymFlow. Vimos que hace unos días no venís al gimnasio. Queremos saber si necesitás ayuda con algo o si querés retomar tu rutina. ¡Te esperamos!`,
-  )
-  return `https://wa.me/${cleaned}?text=${msg}`
-}
-
-const linkBtnStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 4,
-  background: 'none',
-  border: 'none',
-  cursor: 'pointer',
-  color: '#DC2626',
-  fontSize: 13,
-  fontWeight: 600,
-  padding: 0,
-}
-
-const cardStyle: React.CSSProperties = {
-  backgroundColor: '#fff',
-  borderRadius: 12,
-  border: '1px solid #e5e7eb',
-  overflow: 'hidden',
-}
-
-/* ═══════════════════════════ COMPONENT ═══════════════════════════ */
+/* ── Component ── */
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -132,14 +85,15 @@ export default function Dashboard() {
   const [kpiData, setKpiData] = useState<KpiData>({
     activeMembers: null,
     monthlyRevenue: null,
-    overdueAmount: null,
-    overdueCount: null,
-    attendanceToday: null,
-    attendancePct: null,
+    delinquencyAmount: null,
+    newMembersMonth: null,
+    growthPct: null,
   })
   const [kpiLoading, setKpiLoading] = useState(true)
 
-  const [chartData, setChartData] = useState<ChartDayEntry[]>([])
+  const [chartMonthsData, setChartMonthsData] = useState<
+    { month: string; altas: number; bajas: number }[]
+  >([])
   const [chartLoading, setChartLoading] = useState(true)
   const [chartSummary, setChartSummary] = useState({ altas: 0, bajas: 0, neto: 0 })
 
@@ -166,13 +120,15 @@ export default function Dashboard() {
     const startOfMonth = daysAgo(0)
     startOfMonth.setDate(1)
     const sevenDays = daysAgo(-7)
-    const thirtyDaysAgo = daysAgo(30)
     const sixtyDaysAgo = daysAgo(60)
+    const sixMonthsAgo = new Date()
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+    sixMonthsAgo.setHours(0, 0, 0, 0)
 
     const results = await Promise.allSettled([
       /* 0 — Active members */
-      (supabase
-        .from('memberships') as any)
+      (supabase as any)
+        .from('memberships')
         .select('profile_id')
         .or('status.eq.active,admin_override.eq.true')
         .gte('end_date', todayStr),
@@ -184,38 +140,32 @@ export default function Dashboard() {
         .eq('status', 'confirmed')
         .gte('confirmed_at', startOfMonth.toISOString()),
 
-      /* 2 — Overdue payments this month (morosidad activa) */
+      /* 2 — Pending payments (delinquency) */
       supabase
         .from('payment_transactions')
         .select('id, amount')
         .eq('status', 'pending')
         .gte('created_at', startOfMonth.toISOString()),
 
-      /* 3 — Sessions last 30 days (attendance today + avg) */
+      /* 3 — Confirmed payments last 6 months (growth + altas) */
       supabase
-        .from('workout_sessions')
-        .select('profile_id, session_date')
-        .gte('session_date', thirtyDaysAgo.toISOString()),
+        .from('payment_transactions')
+        .select('profile_id, amount, confirmed_at')
+        .eq('status', 'confirmed')
+        .gte('confirmed_at', sixMonthsAgo.toISOString())
+        .order('confirmed_at'),
 
-      /* 4 — New members last 30 days (Altas) */
-      supabase
-        .from('profiles')
-        .select('created_at')
-        .eq('role', 'member')
-        .gte('created_at', thirtyDaysAgo.toISOString())
-        .order('created_at'),
-
-      /* 5 — Expired memberships last 30 days (Bajas) */
+      /* 4 — Expired memberships last 6 months (bajas) */
       supabase
         .from('memberships')
-        .select('end_date')
+        .select('profile_id, end_date, status')
         .eq('status', 'expired')
-        .gte('end_date', thirtyDaysAgo.toISOString())
-        .lte('end_date', todayStr),
+        .gte('end_date', sixMonthsAgo.toISOString())
+        .order('end_date'),
 
-      /* 6 — Expiring members next 7 days */
-      (supabase
-        .from('memberships') as any)
+      /* 5 — Expiring members next 7 days */
+      (supabase as any)
+        .from('memberships')
         .select(
           `profile_id,
            end_date,
@@ -245,10 +195,9 @@ export default function Dashboard() {
     const [
       activeResult,
       revenueResult,
-      overdueResult,
-      sessions30Result,
-      newMembersResult,
-      bajasResult,
+      pendingResult,
+      confirmedTxResult,
+      expiredMembershipsResult,
       expiringResult,
       membersResult,
       sessions60Result,
@@ -258,10 +207,9 @@ export default function Dashboard() {
     const kpi: KpiData = {
       activeMembers: null,
       monthlyRevenue: null,
-      overdueAmount: null,
-      overdueCount: null,
-      attendanceToday: null,
-      attendancePct: null,
+      delinquencyAmount: null,
+      newMembersMonth: null,
+      growthPct: null,
     }
 
     if (activeResult.status === 'fulfilled') {
@@ -278,88 +226,75 @@ export default function Dashboard() {
         0,
       )
     }
-
-    if (overdueResult.status === 'fulfilled') {
-      const rows = (overdueResult.value as any).data ?? []
-      kpi.overdueCount = rows.length
-      kpi.overdueAmount = rows.reduce(
+    if (pendingResult.status === 'fulfilled') {
+      const rows = (pendingResult.value as any).data ?? []
+      kpi.delinquencyAmount = rows.reduce(
         (s: number, r: any) => s + (r.amount ?? 0),
         0,
       )
     }
 
-    /* ── Attendance (from 30-day sessions) ── */
-    if (sessions30Result.status === 'fulfilled') {
-      const rows = ((sessions30Result.value as any).data ??
-        []) as { profile_id: string; session_date: string }[]
+    /* ── Growth & Chart Altas ── */
+    let altasByMonth: Record<string, number> = {}
+    if (confirmedTxResult.status === 'fulfilled') {
+      const rows = (confirmedTxResult.value as any).data ?? []
 
-      const dailyAttendance: Record<string, Set<string>> = {}
-      for (const s of rows) {
-        if (!dailyAttendance[s.session_date]) {
-          dailyAttendance[s.session_date] = new Set()
+      // Build first-payment-per-member map (MIN confirmed_at)
+      const firstPaymentMap = new Map<string, string>()
+      for (const r of rows) {
+        const pid = r.profile_id
+        const ca = r.confirmed_at
+        if (!pid || !ca) continue
+        const existing = firstPaymentMap.get(pid)
+        if (!existing || ca < existing) {
+          firstPaymentMap.set(pid, ca)
         }
-        dailyAttendance[s.session_date].add(s.profile_id)
       }
 
-      const todayMembers = dailyAttendance[todayStr]
-      kpi.attendanceToday = todayMembers ? todayMembers.size : 0
-
-      const daysWithData = Object.keys(dailyAttendance).length
-      if (daysWithData > 0) {
-        const totalCheckins = Object.values(dailyAttendance).reduce(
-          (sum, set) => sum + set.size,
-          0,
-        )
-        const avgDaily = totalCheckins / daysWithData
-        kpi.attendancePct =
-          avgDaily > 0
-            ? Math.round((kpi.attendanceToday / avgDaily) * 100)
-            : 0
-      } else {
-        kpi.attendancePct = 0
+      const currentMonth = todayISO().substring(0, 7)
+      let newCount = 0
+      for (const [, confirmedAt] of firstPaymentMap) {
+        const month = confirmedAt.substring(0, 7)
+        if (month === currentMonth) newCount++
+        altasByMonth[month] = (altasByMonth[month] || 0) + 1
       }
+
+      kpi.newMembersMonth = newCount
+      kpi.growthPct =
+        kpi.activeMembers && kpi.activeMembers > 0
+          ? Math.round((newCount / kpi.activeMembers) * 1000) / 10
+          : 0
     }
+
     setKpiData(kpi)
     setKpiLoading(false)
 
-    /* ── Chart: Altas & Bajas ── */
-    const allDays = generateLast30Days()
+    /* ── Chart ── */
+    const months: string[] = []
+    const now = new Date()
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      months.push(`${y}-${m}`)
+    }
 
-    const altaCounts: Record<string, number> = {}
-    allDays.forEach((d) => (altaCounts[d.dateStr] = 0))
-    if (newMembersResult.status === 'fulfilled') {
-      const raw = ((newMembersResult.value as any).data ?? []) as {
-        created_at: string
-      }[]
-      for (const entry of raw) {
-        const key = entry.created_at?.split('T')[0]
-        if (key && altaCounts[key] !== undefined) altaCounts[key]++
+    const bajasByMonth: Record<string, number> = {}
+    if (expiredMembershipsResult.status === 'fulfilled') {
+      const rows = (expiredMembershipsResult.value as any).data ?? []
+      for (const r of rows) {
+        const month = r.end_date?.substring(0, 7)
+        if (month) bajasByMonth[month] = (bajasByMonth[month] || 0) + 1
       }
     }
 
-    const bajaCounts: Record<string, number> = {}
-    allDays.forEach((d) => (bajaCounts[d.dateStr] = 0))
-    if (bajasResult.status === 'fulfilled') {
-      const raw = ((bajasResult.value as any).data ?? []) as {
-        end_date: string
-      }[]
-      for (const entry of raw) {
-        const key = entry.end_date?.split('T')[0]
-        if (key && bajaCounts[key] !== undefined) bajaCounts[key]++
-      }
-    }
-
-    const chart: ChartDayEntry[] = allDays.map((d) => ({
-      dia: d.day,
-      dateStr: d.dateStr,
-      Altas: altaCounts[d.dateStr] ?? 0,
-      Bajas: bajaCounts[d.dateStr] ?? 0,
-    }))
-
-    const totalAltas = chart.reduce((s, e) => s + e.Altas, 0)
-    const totalBajas = chart.reduce((s, e) => s + e.Bajas, 0)
-    setChartData(chart)
-    setChartSummary({ altas: totalAltas, bajas: totalBajas, neto: totalAltas - totalBajas })
+    setChartMonthsData(
+      months.map((m) => ({
+        month: m,
+        altas: altasByMonth[m] || 0,
+        bajas: bajasByMonth[m] || 0,
+      })),
+    )
     setChartLoading(false)
 
     /* ── Expiring ── */
@@ -402,7 +337,7 @@ export default function Dashboard() {
             id: m.id,
             full_name: m.full_name,
             last_session: lastDate ?? null,
-            phone: m.phone,
+            phone: m.phone ?? null,
           })
         }
       }
@@ -410,13 +345,6 @@ export default function Dashboard() {
     }
     setInactiveLoading(false)
   }
-
-  /* ── Derived summary for chart ── */
-
-  const chartHasData = useMemo(
-    () => chartData.some((e) => e.Altas > 0 || e.Bajas > 0),
-    [chartData],
-  )
 
   /* ── Render ── */
 
@@ -480,43 +408,47 @@ export default function Dashboard() {
                   hasError={kpiData.monthlyRevenue === null}
                 />
                 <KpiCard
-                  icon={<AlertTriangle size={20} style={{ color: '#D97706' }} />}
+                  icon={
+                    <Clock
+                      size={20}
+                      style={{ color: '#D97706' }}
+                    />
+                  }
                   label="Morosidad Activa"
                   value={
-                    kpiData.overdueAmount !== null
-                      ? formatCurrency(kpiData.overdueAmount)
+                    kpiData.delinquencyAmount !== null
+                      ? formatCurrency(kpiData.delinquencyAmount)
                       : '-'
                   }
-                  subtitle={
-                    kpiData.overdueCount !== null
-                      ? `${kpiData.overdueCount} pago${kpiData.overdueCount !== 1 ? 's' : ''} impago${kpiData.overdueCount !== 1 ? 's' : ''} este mes`
-                      : null
-                  }
-                  hasError={kpiData.overdueAmount === null}
+                  subtitle={null}
+                  hasError={kpiData.delinquencyAmount === null}
                 />
                 <KpiCard
-                  icon={<CalendarCheck size={20} style={{ color: '#7C3AED' }} />}
-                  label="Ocupación de Hoy"
+                  icon={
+                    <TrendingUp
+                      size={20}
+                      style={{ color: '#059669' }}
+                    />
+                  }
+                  label="Crecimiento"
                   value={
-                    kpiData.attendanceToday !== null
-                      ? `${kpiData.attendanceToday} alumno${kpiData.attendanceToday !== 1 ? 's' : ''}`
+                    kpiData.newMembersMonth !== null
+                      ? `${kpiData.newMembersMonth} nuevos`
                       : '-'
                   }
                   subtitle={
-                    kpiData.attendanceToday !== null && kpiData.attendancePct !== null
-                      ? kpiData.attendanceToday > 0
-                        ? `${kpiData.attendancePct}% del promedio diario`
-                        : 'Sin actividad hoy'
+                    kpiData.growthPct !== null
+                      ? `${kpiData.growthPct}% vs activos`
                       : null
                   }
-                  hasError={kpiData.attendanceToday === null}
+                  hasError={kpiData.newMembersMonth === null}
                 />
               </>
             )}
           </div>
         </section>
 
-        {/* ═══ Balance de Miembros (LineChart) ═══ */}
+        {/* ═══ Retention Chart ═══ */}
         <section>
           <div
             style={{
@@ -526,90 +458,64 @@ export default function Dashboard() {
               marginBottom: 14,
             }}
           >
-            <h2
-              style={{
-                margin: 0,
-                fontSize: 16,
-                fontWeight: 700,
-                color: '#111827',
-              }}
-            >
-              Balance de Miembros
-            </h2>
-            <span style={{ fontSize: 13, color: '#6b7280' }}>
-              {chartSummary.neto >= 0 ? '+' : ''}
-              {chartSummary.neto} neto · {chartSummary.altas} altas ·{' '}
-              {chartSummary.bajas} bajas
-            </span>
-          </div>
+            Retención Mensual
+          </h2>
           {chartLoading ? (
-            <ChartSkeleton />
-          ) : chartHasData ? (
             <div style={cardStyle}>
-              <div style={{ padding: '20px 4px 4px' }}>
-                <ResponsiveContainer width="100%" height={240}>
-                  <LineChart
-                    data={chartData}
-                    margin={{ top: 4, right: 12, left: -8, bottom: 4 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                    <XAxis
-                      dataKey="dia"
-                      tick={{ fontSize: 11, fill: '#9ca3af' }}
-                      axisLine={{ stroke: '#e5e7eb' }}
-                      tickLine={false}
-                      minTickGap={20}
-                    />
-                    <YAxis
-                      allowDecimals={false}
-                      tick={{ fontSize: 11, fill: '#9ca3af' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        borderRadius: 8,
-                        border: '1px solid #e5e7eb',
-                        fontSize: 13,
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-                      }}
-                      labelFormatter={(label: any) =>
-                        label !== undefined ? `Día ${label}` : ''
-                      }
-                      formatter={(value: any, _name: any) => [
-                        value,
-                        _name === 'Altas' ? 'Nuevos' : 'Bajas',
-                      ]}
-                    />
-                    <Legend
-                      formatter={(value: string) => (
-                        <span style={{ color: '#6b7280', fontSize: 13 }}>
-                          {value === 'Altas' ? 'Altas' : 'Bajas'}
-                        </span>
-                      )}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="Altas"
-                      stroke="#059669"
-                      strokeWidth={2}
-                      dot={{ r: 2, fill: '#059669' }}
-                      activeDot={{ r: 4 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="Bajas"
-                      stroke="#DC2626"
-                      strokeWidth={2}
-                      dot={{ r: 2, fill: '#DC2626' }}
-                      activeDot={{ r: 4 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              <div
+                className="animate-pulse"
+                style={{
+                  height: 250,
+                  backgroundColor: '#e5e7eb',
+                  borderRadius: 8,
+                  margin: 16,
+                }}
+              />
+            </div>
+          ) : chartMonthsData.length > 0 ? (
+            <div style={cardStyle}>
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={chartMonthsData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fontSize: 12, fill: '#9ca3af' }}
+                    tickFormatter={(m: string) => {
+                      const [y, mo] = m.split('-')
+                      const months = [
+                        'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+                        'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dec',
+                      ]
+                      return `${months[parseInt(mo) - 1]} ${y}`
+                    }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 12, fill: '#9ca3af' }}
+                    allowDecimals={false}
+                  />
+                  <Tooltip />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="altas"
+                    stroke="#059669"
+                    strokeWidth={2}
+                    name="Altas"
+                    dot={{ r: 3 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="bajas"
+                    stroke="#DC2626"
+                    strokeWidth={2}
+                    name="Bajas"
+                    dot={{ r: 3 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           ) : (
-            <EmptyCard message="Sin registros de altas o bajas en los últimos 30 días" />
+            <EmptyCard message="Sin datos de retención en los últimos 6 meses" />
           )}
         </section>
 
@@ -756,72 +662,66 @@ export default function Dashboard() {
                   >
                     {m.full_name}
                   </span>
-
-                  {/* Days absent */}
-                  <span
+                  <div
                     style={{
-                      fontSize: 13,
-                      color: m.last_session ? '#DC2626' : '#9ca3af',
-                      fontStyle: m.last_session ? 'normal' : 'italic',
-                      textAlign: 'right',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
                     }}
                   >
-                    {m.last_session
-                      ? `${daysSince(m.last_session)} días`
-                      : 'Nunca'}
-                  </span>
-
-                  {/* WhatsApp action */}
-                  {m.phone ? (
-                    <a
-                      href={formatWhatsAppUrl(m.phone, m.full_name.split(' ')[0])}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title="Contactar por WhatsApp"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: 32,
-                        height: 32,
-                        borderRadius: 8,
-                        backgroundColor: '#f0fdf4',
-                        color: '#16a34a',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textDecoration: 'none',
-                        transition: 'background-color 0.15s',
-                        flexShrink: 0,
-                      }}
-                      onMouseEnter={(e) => {
-                        ;(e.currentTarget as HTMLElement).style.backgroundColor =
-                          '#dcfce7'
-                      }}
-                      onMouseLeave={(e) => {
-                        ;(e.currentTarget as HTMLElement).style.backgroundColor =
-                          '#f0fdf4'
-                      }}
-                    >
-                      <MessageCircle size={16} />
-                    </a>
-                  ) : (
                     <span
-                      title="Sin teléfono registrado"
                       style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: 32,
-                        height: 32,
-                        borderRadius: 8,
-                        backgroundColor: '#f9fafb',
-                        color: '#d1d5db',
-                        flexShrink: 0,
+                        fontSize: 13,
+                        color: m.last_session
+                          ? '#DC2626'
+                          : '#9ca3af',
+                        fontStyle: m.last_session
+                          ? 'normal'
+                          : 'italic',
                       }}
                     >
-                      <MessageCircle size={16} />
+                      {m.last_session
+                        ? `Hace ${daysSince(m.last_session)} días`
+                        : 'Nunca entrenó'}
                     </span>
-                  )}
+                    {m.phone ? (
+                      <a
+                        href={`https://wa.me/${m.phone.replace(/[^0-9]/g, '')}?text=Hola%20${encodeURIComponent(m.full_name)}%2C%20queremos%20verte%20de%20vuelta%20en%20el%20gimnasio%21`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Contactar por WhatsApp"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          backgroundColor: '#f0fdf4',
+                          color: '#22c55e',
+                          border: 'none',
+                          cursor: 'pointer',
+                          textDecoration: 'none',
+                        }}
+                      >
+                        <MessageCircle size={16} />
+                      </a>
+                    ) : (
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          color: '#d1d5db',
+                        }}
+                      >
+                        <MessageCircle size={16} />
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -967,37 +867,6 @@ function KpiSkeleton() {
           borderRadius: 4,
         }}
       />
-    </div>
-  )
-}
-
-/* ════════════════════════ Chart Components ════════════════════════ */
-
-function ChartSkeleton() {
-  return (
-    <div style={cardStyle}>
-      <div
-        className="animate-pulse"
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: 3,
-          height: 200,
-          padding: '20px 24px',
-        }}
-      >
-        {Array.from({ length: 30 }).map((_, i) => (
-          <div
-            key={i}
-            style={{
-              flex: 1,
-              height: `${20 + (i % 10) * 8}%`,
-              backgroundColor: '#e5e7eb',
-              borderRadius: '2px 2px 0 0',
-            }}
-          />
-        ))}
-      </div>
     </div>
   )
 }

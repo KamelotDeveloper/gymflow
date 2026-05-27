@@ -14,6 +14,7 @@ import {
   LogOut,
   DollarSign,
   X,
+  LayoutDashboard,
 } from 'lucide-react'
 import { useGymConfig } from '../hooks/useGymConfig'
 import { supabase } from '../lib/supabase'

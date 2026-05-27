@@ -3,10 +3,12 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath } from 'node:url';
 
-// Absolute path to project root (where vite.config.ts lives)
-const projectRoot = path.dirname(fileURLToPath(import.meta.url))
+// Get __dirname equivalent in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = __dirname;
 
 function esToolkitCompatPlugin(): import('vite').Plugin {
   // Pre-load mapping from compat module name → dist ESM path + export name
