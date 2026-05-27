@@ -13,6 +13,7 @@ import {
   LogOut,
   DollarSign,
   X,
+  LayoutDashboard,
 } from 'lucide-react'
 import { useGymConfig } from '../hooks/useGymConfig'
 import { supabase } from '../lib/supabase'
@@ -24,6 +25,7 @@ type NavItem = {
 }
 
 const navItems: NavItem[] = [
+  { icon: LayoutDashboard, label: 'Dashboard', path: '/admin/dashboard' },
   { icon: Users, label: 'Miembros', path: '/admin/members' },
   { icon: ClipboardList, label: 'Rutinas', path: '/admin/routines' },
   { icon: Dumbbell, label: 'Ejercicios', path: '/admin/exercises' },
