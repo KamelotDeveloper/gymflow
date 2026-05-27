@@ -1,24 +1,21 @@
-// Cache name - update this when deploying new versions
+﻿// Cache name - update this when deploying new versions
 const CACHE = 'gymflow-v2'
 // List of static assets to cache during install
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/assets/index.css',
-  '/assets/index.js',
-  // Add other static assets as needed
+  '/assets/index.js'
 ]
 
 self.addEventListener('install', (event) => {
-  // Pre-cache static assets
   event.waitUntil(
     caches.open(CACHE).then((cache) => cache.addAll(STATIC_ASSETS))
-    .then(() => self.skipWaiting())
+      .then(() => self.skipWaiting())
   )
 })
 
 self.addEventListener('activate', (event) => {
-  // Clean up old caches
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -35,7 +32,7 @@ self.addEventListener('fetch', (event) => {
   // Skip cross-origin requests (e.g., to Supabase, YouTube, etc.)
   if (!event.request.url.startsWith(self.location.origin)) {
     // Let browser handle cross-origin requests normally
-    return
+    return fetch(event.request)
   }
 
   // Handle same-origin requests with cache-first strategy
@@ -64,7 +61,7 @@ self.addEventListener('fetch', (event) => {
           })
         }
         return networkResponse
-      }).catch((error) => {
+      }).catch(() => {
         // If network fails, try to return a fallback for HTML requests
         if (event.request.headers.get('Accept').includes('text/html')) {
           return caches.match('/offline.html').then((offlineResponse) => {
@@ -88,4 +85,5 @@ self.addEventListener('fetch', (event) => {
       )
     })
   )
-})
+}
+
