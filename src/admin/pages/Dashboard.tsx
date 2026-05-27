@@ -9,7 +9,6 @@ import {
   TrendingUp,
   MessageCircle,
   ChevronRight,
-  MessageCircle,
 } from 'lucide-react'
 import {
   LineChart,
@@ -95,7 +94,6 @@ export default function Dashboard() {
     { month: string; altas: number; bajas: number }[]
   >([])
   const [chartLoading, setChartLoading] = useState(true)
-  const [chartSummary, setChartSummary] = useState({ altas: 0, bajas: 0, neto: 0 })
 
   const [expiring, setExpiring] = useState<ExpiringMember[]>([])
   const [expiringLoading, setExpiringLoading] = useState(true)
@@ -450,12 +448,12 @@ export default function Dashboard() {
 
         {/* ═══ Retention Chart ═══ */}
         <section>
-          <div
+          <h2
             style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'baseline',
-              marginBottom: 14,
+              margin: '0 0 14px',
+              fontSize: 16,
+              fontWeight: 700,
+              color: '#111827',
             }}
           >
             Retención Mensual
@@ -992,9 +990,29 @@ function EmptyCard({ message }: { message: string }) {
 
 /* ════════════════════════ Styles ════════════════════════ */
 
+const cardStyle: React.CSSProperties = {
+  backgroundColor: '#fff',
+  borderRadius: 12,
+  border: '1px solid #e5e7eb',
+  overflow: 'hidden',
+}
+
 const kpiCardStyle: React.CSSProperties = {
   backgroundColor: '#fff',
   border: '1px solid #e5e7eb',
   borderRadius: 10,
   padding: 16,
+}
+
+const linkBtnStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  background: 'none',
+  border: 'none',
+  cursor: 'pointer',
+  color: '#DC2626',
+  fontSize: 13,
+  fontWeight: 600,
+  padding: 0,
 }
