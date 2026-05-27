@@ -16,3 +16,7 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+[context.deploy-preview]
+  command = "pnpm run build"
+  publish = "dist"
