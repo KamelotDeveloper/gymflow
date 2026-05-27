@@ -1,5 +1,5 @@
-﻿'[build]
-  command = "npm run build"
+[build]
+  command = "pnpm run build"
   publish = "dist"
 
 [build.environment]
@@ -18,6 +18,5 @@
   status = 200
 
 [context.deploy-preview]
-  command = "npm run build"
+  command = "pnpm run build"
   publish = "dist"
-'
