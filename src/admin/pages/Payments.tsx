@@ -40,7 +40,6 @@ export default function Payments() {
   const [_actionLoading, setActionLoading] = useState(false)
 
   // Bank transfer data config
-  const [paymentMethods, setPaymentMethods] = useState<any[]>([])
   const [bankMethod, setBankMethod] = useState<any | null>(null)
   const [editingBank, setEditingBank] = useState(false)
   const [bankForm, setBankForm] = useState({ cbu: '', alias: '', titular: '', cuit: '', banco: '' })
@@ -145,7 +144,6 @@ export default function Payments() {
       const res = await fetch(`${BACKEND_URL}/api/payments/methods`, { headers })
       if (res.ok) {
         const data = await res.json()
-        setPaymentMethods(data.methods ?? [])
         const bank = (data.methods ?? []).find((m: any) => m.type === 'bank_transfer')
         setBankMethod(bank ?? null)
       }
@@ -245,7 +243,7 @@ export default function Payments() {
       {bankMethod && (
         <details
           style={{ marginTop: 32 }}
-          onToggle={(e) => {
+          onToggle={() => {
             // used for ChevronDown rotation styling if needed
           }}
         >
