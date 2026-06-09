@@ -4,6 +4,9 @@ import { useAuthContext } from '../../shared/components/AuthContext'
 import { supabase } from '../../shared/lib/supabase'
 import UserLayout, { formatDateSpanish } from '../../shared/components/UserLayout'
 import { Loader2 } from 'lucide-react'
+import GymConsistencyChart from '../components/GymConsistencyChart'
+import GymStrengthEvolution, { type ExerciseStrength } from '../components/GymStrengthEvolution'
+import GymMuscleBalance, { aggregateByGroup } from '../components/GymMuscleBalance'
 
 type Membership = {
   id: string
@@ -12,6 +15,12 @@ type Membership = {
   status: string
   admin_override: boolean
   plan_name: string
+}
+
+type WeeklyDataPoint = {
+  week: string
+  sessions: number
+  volume: number
 }
 
 export default function Home() {
@@ -26,6 +35,10 @@ export default function Home() {
   const [bestProgress, setBestProgress] = useState<string | null>(null)
   const [nextRoutineDay, setNextRoutineDay] = useState<string | null>(null)
   const [streakWeeks, setStreakWeeks] = useState(0)
+  const [weeklyData, setWeeklyData] = useState<WeeklyDataPoint[]>([])
+  const [strengthData, setStrengthData] = useState<ExerciseStrength[]>([])
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string>('')
+  const [muscleData, setMuscleData] = useState<{ muscle_group: string; volume: number }[]>([])
   const [statsLoading, setStatsLoading] = useState(true)
 
   const today = new Date()
@@ -84,14 +97,15 @@ export default function Home() {
     try {
       const pid = profile!.id
 
-      // Entrenamientos este mes
+      // Entrenamientos este mes (días distintos)
       const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]
-      const { count: sessionCount } = await (supabase as any)
+      const { data: monthSessions } = await (supabase as any)
         .from('workout_sessions')
-        .select('id', { count: 'exact', head: true })
+        .select('session_date')
         .eq('profile_id', pid)
         .gte('session_date', firstOfMonth)
-      setSessionsThisMonth(sessionCount ?? 0)
+      const distinctMonthDays = new Set((monthSessions ?? []).map((s: any) => s.session_date))
+      setSessionsThisMonth(distinctMonthDays.size)
 
       // Mejor progreso desde view progress_comparison
       const { data: progressData } = await (supabase as any)
@@ -104,7 +118,15 @@ export default function Home() {
         setBestProgress(progressData[0].exercise_name)
       }
 
-      // Próxima rutina (siguiente day_number sin workout_session hoy)
+      const getMonday = (d: Date) => {
+        const m = new Date(d)
+        const day = m.getDay()
+        m.setDate(m.getDate() - day + (day === 0 ? -6 : 1))
+        m.setHours(0, 0, 0, 0)
+        return m
+      }
+
+      // Próxima rutina (siguiente día SIN entrenar esta semana)
       const { data: routines } = await (supabase as any)
         .from('routines')
         .select('id, name, day_number')
@@ -112,7 +134,7 @@ export default function Home() {
         .order('day_number', { ascending: true })
 
       if (routines && routines.length > 0) {
-        const todayISO = today.toISOString().split('T')[0]
+        const weekStart = getMonday(today).toISOString().split('T')[0]
         let found = null
         for (const r of routines) {
           const { data: existing } = await (supabase as any)
@@ -120,7 +142,7 @@ export default function Home() {
             .select('id')
             .eq('profile_id', pid)
             .eq('routine_id', r.id)
-            .eq('session_date', todayISO)
+            .gte('session_date', weekStart)
             .limit(1)
           if (!existing || existing.length === 0) {
             found = r.name
@@ -154,6 +176,148 @@ export default function Home() {
           else break
         }
         setStreakWeeks(streak)
+      }
+
+      // ── Weekly chart data (4 semanas) ──
+      const fourWeeksAgo = new Date(today)
+      fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28)
+      const startISO = fourWeeksAgo.toISOString().split('T')[0]
+
+      // Generate last 4 Monday-start weeks
+      const thisMonday = getMonday(today)
+      const weekStarts: Date[] = []
+      for (let i = 3; i >= 0; i--) {
+        const w = new Date(thisMonday)
+        w.setDate(thisMonday.getDate() - i * 7)
+        weekStarts.push(w)
+      }
+
+      const weekData: { week: string; sessions: number; volume: number }[] = weekStarts.map((_, i) => ({
+        week: `${4 - i}`,
+        sessions: 0,
+        volume: 0,
+      }))
+
+      // Count distinct training DAYS per week
+      if (sessions) {
+        const seenDays = new Set<string>()
+        for (const s of sessions) {
+          const sd = new Date(s.session_date + 'T00:00:00')
+          for (let i = 0; i < weekStarts.length; i++) {
+            const start = weekStarts[i].getTime()
+            const end = start + 7 * 86400000
+            if (sd.getTime() >= start && sd.getTime() < end) {
+              const dayKey = s.session_date
+              if (!seenDays.has(dayKey)) {
+                seenDays.add(dayKey)
+                weekData[i].sessions++
+              }
+              break
+            }
+          }
+        }
+      }
+
+      // Fetch volume (weight_kg × reps per session)
+      const { data: volumeSessions } = await (supabase as any)
+        .from('workout_sessions')
+        .select('id, session_date, workout_logs(weight_kg, reps)')
+        .eq('profile_id', pid)
+        .gte('session_date', startISO)
+
+      if (volumeSessions) {
+        for (const s of volumeSessions) {
+          const sd = new Date(s.session_date + 'T00:00:00')
+          for (let i = 0; i < weekStarts.length; i++) {
+            const start = weekStarts[i].getTime()
+            const end = start + 7 * 86400000
+            if (sd.getTime() >= start && sd.getTime() < end) {
+              const vol = (s.workout_logs || []).reduce(
+                (sum: number, log: any) => sum + (Number(log.weight_kg) || 0) * (Number(log.reps) || 0),
+                0
+              )
+              weekData[i].volume += vol
+              break
+            }
+          }
+        }
+      }
+
+      // Reverse so week 1 (current) appears LEFT
+      setWeeklyData([...weekData].reverse())
+
+      // ── Strength evolution (max weight per exercise per week) ──
+      const { data: strengthRows } = await (supabase as any)
+        .from('workout_logs')
+        .select(`
+          weight_kg,
+          session:workout_sessions!inner(session_date, profile_id),
+          exercise:exercises!inner(id, name)
+        `)
+        .eq('session.profile_id', pid)
+        .gte('session.session_date', startISO)
+
+      if (strengthRows && strengthRows.length > 0) {
+        const exMap = new Map<string, { name: string; weeks: Map<number, number> }>()
+        for (const row of strengthRows) {
+          const exId = row.exercise.id
+          const exName = row.exercise.name
+          const w = Number(row.weight_kg) || 0
+          const sd = new Date(row.session.session_date + 'T00:00:00')
+
+          // Find which week bucket
+          for (let i = 0; i < weekStarts.length; i++) {
+            const start = weekStarts[i].getTime()
+            const end = start + 7 * 86400000
+            if (sd.getTime() >= start && sd.getTime() < end) {
+              if (!exMap.has(exId)) {
+                exMap.set(exId, { name: exName, weeks: new Map() })
+              }
+              const entry = exMap.get(exId)!
+              const prev = entry.weeks.get(i) ?? 0
+              if (w > prev) entry.weeks.set(i, w)
+              break
+            }
+          }
+        }
+
+        const exercises: ExerciseStrength[] = []
+        for (const [exId, { name, weeks }] of exMap) {
+          // Create data points for all 4 weeks
+          const data = weekData.map((_, i) => ({
+            week: `${4 - i}`,
+            max_weight: weeks.get(3 - i) ?? 0,
+          })).reverse()
+          exercises.push({ exercise_id: exId, exercise_name: name, data })
+        }
+
+        setStrengthData(exercises)
+        if (exercises.length > 0 && !selectedExerciseId) {
+          setSelectedExerciseId(exercises[0].exercise_id)
+        }
+      }
+
+      // ── Muscle balance (volume per muscle group) ──
+      const { data: muscleRows } = await (supabase as any)
+        .from('workout_logs')
+        .select(`
+          weight_kg,
+          reps,
+          exercise:exercises!inner(muscle_group)
+        `)
+        .eq('session.profile_id', pid)
+        .gte('session.session_date', startISO)
+
+      if (muscleRows && muscleRows.length > 0) {
+        const groupMap = new Map<string, number>()
+        for (const row of muscleRows) {
+          const mg = row.exercise.muscle_group
+          const vol = (Number(row.weight_kg) || 0) * (Number(row.reps) || 0)
+          groupMap.set(mg, (groupMap.get(mg) ?? 0) + vol)
+        }
+        setMuscleData(
+          Array.from(groupMap.entries()).map(([muscle_group, volume]) => ({ muscle_group, volume }))
+        )
       }
     } catch {
       // stats not available
@@ -291,6 +455,25 @@ export default function Home() {
             </div>
           )}
         </section>
+
+        {/* ── Charts ── */}
+        {!statsLoading && weeklyData.length > 0 && (
+          <section className="mt-6 space-y-4">
+            <GymConsistencyChart
+              data={weeklyData.map((d) => ({ week: d.week, sessions: d.sessions }))}
+              monthlyCompliance={weeklyData.reduce((s, d) => s + d.sessions, 0)}
+              goalDays={7}
+            />
+            {strengthData.length > 0 && (
+              <GymStrengthEvolution
+                exercises={strengthData}
+                selectedExerciseId={selectedExerciseId}
+                onSelectExercise={setSelectedExerciseId}
+              />
+            )}
+            <GymMuscleBalance data={aggregateByGroup(muscleData)} />
+          </section>
+        )}
       </div>
     </UserLayout>
   )

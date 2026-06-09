@@ -30,6 +30,7 @@ type Routine = {
   id: string
   name: string
   day_number: number
+  description: string | null
 }
 
 type RoutineExercise = {
@@ -72,6 +73,7 @@ export default function UserRutina() {
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState(false)
   const [currentWeek, setCurrentWeek] = useState(1)
+  const [sessionNotes, setSessionNotes] = useState('')
 
   // Refs to always have latest state in handleSave (avoid stale closure)
   const perSetInputsRef = useRef(perSetInputs)
@@ -96,6 +98,7 @@ export default function UserRutina() {
         .select(`
           id,
           name,
+          description,
           day_number,
           member_id,
           routine_exercises(id)
@@ -223,31 +226,55 @@ export default function UserRutina() {
   )
 
   const handleSave = async () => {
-    if (!selectedRoutine || !profile?.id || (!hasAnyInput && !hasAnyPerSetInput)) return
+    if (!selectedRoutine || !profile?.id || (!hasAnyInput && !hasAnyPerSetInput && !sessionNotes.trim())) return
     setSaving(true)
     try {
       const pid = profile.id
       const todayISO = new Date().toISOString().split('T')[0]
 
-      // 1. Create workout_session
-      console.log('📝 Creando sesión...', { pid, routine_id: selectedRoutine.id })
-      const { data: session, error: sessionErr } = await (supabase as any)
+      // ── 1. Reuse existing session for this day+routine ──
+      const { data: existingSession } = await (supabase as any)
         .from('workout_sessions')
-        .insert({
-          profile_id: pid,
-          routine_id: selectedRoutine.id,
-          session_date: todayISO,
-          duration_mins: null,
-        })
-        .select()
-        .single()
+        .select('id')
+        .eq('profile_id', pid)
+        .eq('routine_id', selectedRoutine.id)
+        .eq('session_date', todayISO)
+        .limit(1)
+        .maybeSingle()
 
-      if (sessionErr) {
-        console.error('❌ Error al crear sesión:', sessionErr)
-        throw new Error(`Error al crear sesión: ${sessionErr.message}`)
+      let sessionId: string
+      if (existingSession) {
+        sessionId = existingSession.id
+        console.log('♻️ Reusando sesión existente:', sessionId)
+        // Update notes if provided
+        if (sessionNotes.trim()) {
+          await (supabase as any)
+            .from('workout_sessions')
+            .update({ notes: sessionNotes.trim() })
+            .eq('id', sessionId)
+        }
+      } else {
+        console.log('📝 Creando nueva sesión...', { pid, routine_id: selectedRoutine.id })
+        const { data: session, error: sessionErr } = await (supabase as any)
+          .from('workout_sessions')
+          .insert({
+            profile_id: pid,
+            routine_id: selectedRoutine.id,
+            session_date: todayISO,
+            duration_mins: null,
+            notes: sessionNotes.trim() || null,
+          })
+          .select()
+          .single()
+
+        if (sessionErr) {
+          console.error('❌ Error al crear sesión:', sessionErr)
+          throw new Error(`Error al crear sesión: ${sessionErr.message}`)
+        }
+        if (!session) throw new Error('No se pudo crear la sesión')
+        sessionId = session.id
+        console.log('✅ Sesión creada:', sessionId)
       }
-      if (!session) throw new Error('No se pudo crear la sesión')
-      console.log('✅ Sesión creada:', session.id)
 
       // Get all session IDs for this profile (for baseline check)
       const { data: allSessions } = await (supabase as any)
@@ -263,13 +290,13 @@ export default function UserRutina() {
       console.log('🔍 perSetInputs (ref) antes del loop:', JSON.stringify(currentPerSetInputs))
       console.log('🔍 exercises (ref):', currentExercises.map(e => ({ id: e.id, name: e.exercise.name })))
       
-      // 2. For each exercise, insert workout_log rows
+      // 2. For each exercise, upsert workout_log rows
       for (const ex of currentExercises) {
         const perSet = currentPerSetInputs[ex.id]
         console.log('🔍 ex.id:', ex.id, 'perSet:', perSet, 'perSet?.length:', perSet?.length)
 
         if (perSet && perSet.length > 0) {
-          // ── Per-set mode: insert N rows ──
+          // ── Per-set mode: upsert N rows ──
           for (const ps of perSet) {
             const repsNum = parseInt(ps.reps_done, 10)
             const weightNum = parseFloat(ps.weight_used_kg)
@@ -278,7 +305,17 @@ export default function UserRutina() {
               console.log('⏭️ set skipped (no data):', { ex: ex.exercise.id, set: ps.set_number, reps_done: ps.reps_done, weight_used_kg: ps.weight_used_kg })
               continue
             }
-            console.log('📝 insertando log:', { exercise_id: ex.exercise.id, set_number: ps.set_number, reps_done: repsNum, weight_used_kg: weightNum })
+            console.log('📝 upsert log:', { exercise_id: ex.exercise.id, set_number: ps.set_number, reps_done: repsNum, weight_used_kg: weightNum })
+
+            // Check if a log already exists for (session_id, exercise_id, set_number)
+            const { data: existingLog } = await (supabase as any)
+              .from('workout_logs')
+              .select('id')
+              .eq('session_id', sessionId)
+              .eq('exercise_id', ex.exercise.id)
+              .eq('set_number', ps.set_number)
+              .limit(1)
+              .maybeSingle()
 
             // Per-set baseline detection: check (exercise_id, set_number) pair
             const { data: existingBaseline } = await (supabase as any)
@@ -291,18 +328,31 @@ export default function UserRutina() {
 
             const isBaseline = !existingBaseline || existingBaseline.length === 0
 
-            const { error: logErr } = await (supabase as any).from('workout_logs').insert({
-              session_id: session.id,
-              exercise_id: ex.exercise.id,
-              set_number: ps.set_number,
-              reps_done: isNaN(repsNum) ? 0 : repsNum,
-              weight_used_kg: isNaN(weightNum) ? 0 : weightNum,
-              is_baseline: isBaseline,
-            })
-            if (logErr) console.error('❌ Error insert log:', logErr, { ex: ex.exercise.id, set: ps.set_number })
+            if (existingLog) {
+              // UPDATE existing log
+              const { error: updateErr } = await (supabase as any)
+                .from('workout_logs')
+                .update({
+                  reps_done: isNaN(repsNum) ? 0 : repsNum,
+                  weight_used_kg: isNaN(weightNum) ? 0 : weightNum,
+                })
+                .eq('id', existingLog.id)
+              if (updateErr) console.error('❌ Error update log:', updateErr, { id: existingLog.id })
+            } else {
+              // INSERT new log
+              const { error: logErr } = await (supabase as any).from('workout_logs').insert({
+                session_id: sessionId,
+                exercise_id: ex.exercise.id,
+                set_number: ps.set_number,
+                reps_done: isNaN(repsNum) ? 0 : repsNum,
+                weight_used_kg: isNaN(weightNum) ? 0 : weightNum,
+                is_baseline: isBaseline,
+              })
+              if (logErr) console.error('❌ Error insert log:', logErr, { ex: ex.exercise.id, set: ps.set_number })
+            }
           }
         } else {
-          // ── Single-field mode: insert 1 row (legacy) ──
+          // ── Single-field mode: upsert 1 row (legacy) ──
           const input = currentInputs.find((i) => i.routine_exercise_id === ex.id)
           if (!input) continue
 
@@ -311,6 +361,15 @@ export default function UserRutina() {
           const weightNum = parseFloat(input.weight_kg)
 
           if (isNaN(setsNum) && isNaN(repsNum) && isNaN(weightNum)) continue
+
+          // Check if a log already exists for (session_id, exercise_id)
+          const { data: existingLog } = await (supabase as any)
+            .from('workout_logs')
+            .select('id')
+            .eq('session_id', sessionId)
+            .eq('exercise_id', input.exercise_id)
+            .limit(1)
+            .maybeSingle()
 
           // Per-exercise baseline detection (original behavior)
           const { data: existingBaseline } = await (supabase as any)
@@ -323,15 +382,29 @@ export default function UserRutina() {
 
           const isBaseline = !existingBaseline || existingBaseline.length === 0
 
-          const { error: logErr } = await (supabase as any).from('workout_logs').insert({
-            session_id: session.id,
-            exercise_id: input.exercise_id,
-            set_number: isNaN(setsNum) ? 1 : setsNum,
-            reps_done: isNaN(repsNum) ? 0 : repsNum,
-            weight_used_kg: isNaN(weightNum) ? 0 : weightNum,
-            is_baseline: isBaseline,
-          })
-          if (logErr) console.error('❌ Error insert log legacy:', logErr, { ex: input.exercise_id })
+          if (existingLog) {
+            // UPDATE existing log
+            const { error: updateErr } = await (supabase as any)
+              .from('workout_logs')
+              .update({
+                set_number: isNaN(setsNum) ? 1 : setsNum,
+                reps_done: isNaN(repsNum) ? 0 : repsNum,
+                weight_used_kg: isNaN(weightNum) ? 0 : weightNum,
+              })
+              .eq('id', existingLog.id)
+            if (updateErr) console.error('❌ Error update log legacy:', updateErr, { id: existingLog.id })
+          } else {
+            // INSERT new log
+            const { error: logErr } = await (supabase as any).from('workout_logs').insert({
+              session_id: sessionId,
+              exercise_id: input.exercise_id,
+              set_number: isNaN(setsNum) ? 1 : setsNum,
+              reps_done: isNaN(repsNum) ? 0 : repsNum,
+              weight_used_kg: isNaN(weightNum) ? 0 : weightNum,
+              is_baseline: isBaseline,
+            })
+            if (logErr) console.error('❌ Error insert log legacy:', logErr, { ex: input.exercise_id })
+          }
         }
       }
 
@@ -369,6 +442,8 @@ export default function UserRutina() {
             saving={saving}
             successMsg={successMsg}
             currentWeek={currentWeek}
+            sessionNotes={sessionNotes}
+            onNotesChange={setSessionNotes}
             onBack={handleBack}
             onUpdateInput={updateInput}
             onUpdatePerSetField={updatePerSetField}
@@ -439,6 +514,8 @@ function ExerciseView({
   saving,
   successMsg,
   currentWeek,
+  sessionNotes,
+  onNotesChange,
   onBack,
   onUpdateInput,
   onUpdatePerSetField,
@@ -451,6 +528,8 @@ function ExerciseView({
   saving: boolean
   successMsg: boolean
   currentWeek: number
+  sessionNotes: string
+  onNotesChange: (val: string) => void
   onBack: () => void
   onUpdateInput: (id: string, field: 'sets' | 'reps' | 'weight_kg', value: string) => void
   onUpdatePerSetField: (id: string, setIndex: number, field: 'reps_done' | 'weight_used_kg', value: string) => void
@@ -462,6 +541,8 @@ function ExerciseView({
   const hasAnyPerSetInput = Object.values(perSetInputs).some((sets) =>
     sets.some((s) => s.reps_done !== '' || s.weight_used_kg !== ''),
   )
+  const hasNotes = sessionNotes.trim().length > 0
+  const canSave = hasAnyInput || hasAnyPerSetInput || hasNotes
 
   return (
     <>
@@ -482,6 +563,13 @@ function ExerciseView({
           Semana {currentWeek}
         </span>
       </div>
+
+      {/* Descripción del profe */}
+      {routine.description && (
+        <div className="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-200">
+          {routine.description}
+        </div>
+      )}
 
       {successMsg ? (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
@@ -646,12 +734,26 @@ function ExerciseView({
             })}
           </div>
 
+          {/* Observations */}
+          <div className="mb-4">
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+              Observaciones
+            </label>
+            <textarea
+              value={sessionNotes}
+              onChange={(e) => onNotesChange(e.target.value)}
+              placeholder="Dolor en alguna zona, molestias, algo a tener en cuenta..."
+              rows={3}
+              className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 text-sm text-gray-900 dark:text-white placeholder-gray-400 resize-none outline-none focus:border-gray-400 dark:focus:border-gray-500 transition-colors"
+            />
+          </div>
+
           {/* Fixed bottom save button */}
           <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-white dark:from-[#0a0a0a] via-white/95 dark:via-[#0a0a0a]/95 to-transparent">
             <div className="max-w-lg mx-auto">
               <button
                 onClick={onSave}
-                disabled={(!hasAnyInput && !hasAnyPerSetInput) || saving}
+                disabled={!canSave || saving}
                 className="w-full h-12 rounded-xl bg-[#111] dark:bg-[#DC2626] text-white font-semibold text-sm hover:bg-[#DC2626] dark:hover:bg-[#b71c1c] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {saving ? (

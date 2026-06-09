@@ -30,6 +30,7 @@ type ProgressEntry = {
   set_number: number
   current_reps: number | null
   current_weight: number | null
+  current_date: string | null
 }
 
 type SetDatum = {
@@ -85,6 +86,7 @@ export default function Routines() {
   const [perSetExpanded, setPerSetExpanded] = useState<Set<string>>(new Set())
   const [memberProgress, setMemberProgress] = useState<Record<string, ProgressEntry[]>>({})
   const [, setProgressLoading] = useState(false)
+  const [lastSessionNote, setLastSessionNote] = useState<{ notes: string; session_date: string } | null>(null)
 
   // ── Create form ──
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -130,6 +132,7 @@ export default function Routines() {
     } else {
       setRoutineExercises([])
       setMemberProgress({})
+      setLastSessionNote(null)
     }
   }, [selectedRoutine])
 
@@ -188,10 +191,11 @@ export default function Routines() {
   const fetchRoutineExercises = async (routineId: string) => {
     setExercisesLoading(true)
     setMemberProgress({})
+    setLastSessionNote(null)
     try {
-      const { data } = await (supabase.from('routine_exercises') as any)
+        const { data } = await (supabase.from('routine_exercises') as any)
         .select(
-          'id, sets, reps, weight_kg, rest_seconds, order_index, sets_data, exercise:exercises(id, name, video_url)',
+          'id, exercise_id, sets, reps, weight_kg, rest_seconds, order_index, sets_data, exercise:exercises(id, name, video_url)',
         )
         .eq('routine_id', routineId)
         .order('order_index', { ascending: true })
@@ -200,7 +204,12 @@ export default function Routines() {
       // Fetch member progress for each exercise if routine has a member
       const routine = selectedRoutine
       if (routine?.member_id && data && data.length > 0) {
-        fetchMemberProgress(routine.member_id, data.map((re: any) => re.exercise_id))
+        const exerciseIds = data.map((re: any) => re.exercise_id ?? re.exercise?.id).filter(Boolean)
+        if (exerciseIds.length > 0) {
+          fetchMemberProgress(routine.member_id, exerciseIds)
+        }
+        // Fetch last session note
+        fetchLastSessionNote(routine.member_id)
       }
     } catch {
       console.error('Error al cargar ejercicios')
@@ -209,11 +218,28 @@ export default function Routines() {
     }
   }
 
+  const fetchLastSessionNote = async (memberId: string) => {
+    setLastSessionNote(null)
+    try {
+      const { data } = await (supabase.from('workout_sessions') as any)
+        .select('notes, session_date')
+        .eq('profile_id', memberId)
+        .not('notes', 'is', null)
+        .order('session_date', { ascending: false })
+        .limit(1)
+      if (data && data.length > 0 && data[0].notes?.trim()) {
+        setLastSessionNote(data[0])
+      }
+    } catch {
+      // silently fail
+    }
+  }
+
   const fetchMemberProgress = async (memberId: string, exerciseIds: string[]) => {
     setProgressLoading(true)
     try {
       const { data } = await (supabase.from('progress_comparison') as any)
-        .select('exercise_id, set_number, current_reps, current_weight')
+        .select('exercise_id, set_number, current_reps, current_weight, current_date')
         .eq('profile_id', memberId)
         .in('exercise_id', exerciseIds)
         .order('set_number', { ascending: true })
@@ -226,6 +252,7 @@ export default function Routines() {
             set_number: entry.set_number,
             current_reps: entry.current_reps,
             current_weight: entry.current_weight,
+            current_date: entry.current_date,
           })
         }
         setMemberProgress(grouped)
@@ -1556,10 +1583,12 @@ export default function Routines() {
                         </div>
 
                         {/* Progress reference (mobile) */}
-                        {memberProgress[re.exercise_id] && memberProgress[re.exercise_id].length > 0 && (
+                        {memberProgress[re.exercise?.id ?? re.exercise_id] && memberProgress[re.exercise?.id ?? re.exercise_id].length > 0 && (
                           <div style={{ backgroundColor: '#f0fdf4', borderRadius: 8, padding: '6px 10px', fontSize: 11, color: '#16a34a', lineHeight: 1.6 }}>
-                            <span style={{ fontWeight: 600 }}>Último:</span>{' '}
-                            {memberProgress[re.exercise_id].map(p =>
+                            <span style={{ fontWeight: 600 }}>
+                              Último{memberProgress[re.exercise?.id ?? re.exercise_id][0]?.current_date ? ` (${formatDate(memberProgress[re.exercise?.id ?? re.exercise_id][0].current_date)})` : ''}:
+                            </span>{' '}
+                            {memberProgress[re.exercise?.id ?? re.exercise_id].map(p =>
                               `S${p.set_number}: ${p.current_weight ?? '—'}kg × ${p.current_reps ?? '—'} reps`
                             ).join(' · ')}
                           </div>
@@ -1963,11 +1992,13 @@ export default function Routines() {
                                 </Td>
                               </tr>
                               {/* Progress reference row */}
-                              {!isExpanded && memberProgress[re.exercise_id] && memberProgress[re.exercise_id].length > 0 && (
+                              {!isExpanded && memberProgress[re.exercise?.id ?? re.exercise_id] && memberProgress[re.exercise?.id ?? re.exercise_id].length > 0 && (
                                 <tr style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#f0fdf4' }}>
                                   <td colSpan={9} style={{ padding: '4px 16px', fontSize: 11, color: '#16a34a', lineHeight: 1.6 }}>
-                                    <span style={{ fontWeight: 600 }}>Último:</span>{' '}
-                                    {memberProgress[re.exercise_id].map(p =>
+                                    <span style={{ fontWeight: 600 }}>
+                                      Último{memberProgress[re.exercise?.id ?? re.exercise_id][0]?.current_date ? ` (${formatDate(memberProgress[re.exercise?.id ?? re.exercise_id][0].current_date)})` : ''}:
+                                    </span>{' '}
+                                    {memberProgress[re.exercise?.id ?? re.exercise_id].map(p =>
                                       `S${p.set_number}: ${p.current_weight ?? '—'}kg × ${p.current_reps ?? '—'} reps`
                                     ).join(' · ')}
                                   </td>
@@ -2081,6 +2112,56 @@ export default function Routines() {
                         })}
                       </tbody>
                     </table>
+                  </div>
+                )}
+
+                {lastSessionNote && (
+                  <div
+                    style={{
+                      marginTop: 16,
+                      padding: 12,
+                      borderRadius: 10,
+                      backgroundColor: '#fffbeb',
+                      border: '1px solid #fde68a',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: 4,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: '#92400e',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        📝 Nota del alumno
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: '#b45309',
+                        }}
+                      >
+                        {formatDate(lastSessionNote.session_date)}
+                      </span>
+                    </div>
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: 13,
+                        color: '#78350f',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {lastSessionNote.notes}
+                    </p>
                   </div>
                 )}
 
@@ -2277,6 +2358,13 @@ function IconButton({
       {children}
     </button>
   )
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
 }
 
 function SkeletonExerciseRow() {
