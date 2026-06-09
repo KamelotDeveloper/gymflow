@@ -145,21 +145,19 @@ export default function Dashboard() {
         .eq('status', 'pending')
         .gte('created_at', startOfMonth.toISOString()),
 
-      /* 3 — Confirmed payments last 6 months (growth + altas) */
-      supabase
-        .from('payment_transactions')
-        .select('profile_id, amount, confirmed_at')
-        .eq('status', 'confirmed')
-        .gte('confirmed_at', sixMonthsAgo.toISOString())
-        .order('confirmed_at'),
-
-      /* 4 — Expired memberships last 6 months (bajas) */
+      /* 3 — Expired memberships last 6 months (bajas) */
       supabase
         .from('memberships')
         .select('profile_id, end_date, status')
         .eq('status', 'expired')
         .gte('end_date', sixMonthsAgo.toISOString())
         .order('end_date'),
+
+      /* 4 — All memberships start dates (for altas) */
+      supabase
+        .from('memberships')
+        .select('profile_id, start_date')
+        .order('start_date'),
 
       /* 5 — Expiring members next 7 days */
       (supabase as any)
@@ -194,8 +192,8 @@ export default function Dashboard() {
       activeResult,
       revenueResult,
       pendingResult,
-      confirmedTxResult,
       expiredMembershipsResult,
+      membershipResult,
       expiringResult,
       membersResult,
       sessions60Result,
@@ -234,35 +232,32 @@ export default function Dashboard() {
 
     /* ── Growth & Chart Altas ── */
     let altasByMonth: Record<string, number> = {}
-    if (confirmedTxResult.status === 'fulfilled') {
-      const rows = (confirmedTxResult.value as any).data ?? []
-
-      // Build first-payment-per-member map (MIN confirmed_at)
-      const firstPaymentMap = new Map<string, string>()
+    let newCount = 0
+    if (membershipResult.status === 'fulfilled') {
+      const rows = (membershipResult.value as any).data ?? []
+      // Find earliest membership per member (= first join)
+      const firstJoinMap = new Map<string, string>()
       for (const r of rows) {
         const pid = r.profile_id
-        const ca = r.confirmed_at
-        if (!pid || !ca) continue
-        const existing = firstPaymentMap.get(pid)
-        if (!existing || ca < existing) {
-          firstPaymentMap.set(pid, ca)
+        const sd = r.start_date
+        if (!pid || !sd) continue
+        const existing = firstJoinMap.get(pid)
+        if (!existing || sd < existing) {
+          firstJoinMap.set(pid, sd)
         }
       }
-
       const currentMonth = todayISO().substring(0, 7)
-      let newCount = 0
-      for (const [, confirmedAt] of firstPaymentMap) {
-        const month = confirmedAt.substring(0, 7)
-        if (month === currentMonth) newCount++
+      for (const [, startDate] of firstJoinMap) {
+        const month = startDate.substring(0, 7)
         altasByMonth[month] = (altasByMonth[month] || 0) + 1
+        if (month === currentMonth) newCount++
       }
-
-      kpi.newMembersMonth = newCount
-      kpi.growthPct =
-        kpi.activeMembers && kpi.activeMembers > 0
-          ? Math.round((newCount / kpi.activeMembers) * 1000) / 10
-          : 0
     }
+    kpi.newMembersMonth = newCount
+    kpi.growthPct =
+      kpi.activeMembers && kpi.activeMembers > 0
+        ? Math.round((newCount / kpi.activeMembers) * 1000) / 10
+        : 0
 
     setKpiData(kpi)
     setKpiLoading(false)
@@ -277,10 +272,21 @@ export default function Dashboard() {
       months.push(`${y}-${m}`)
     }
 
+    // Build set of currently active profile_ids to exclude from bajas
+    const activeProfileIds = new Set<string>()
+    if (activeResult.status === 'fulfilled') {
+      const rows = (activeResult.value as any).data ?? []
+      for (const r of rows) {
+        if (r.profile_id) activeProfileIds.add(r.profile_id)
+      }
+    }
+
     const bajasByMonth: Record<string, number> = {}
     if (expiredMembershipsResult.status === 'fulfilled') {
       const rows = (expiredMembershipsResult.value as any).data ?? []
       for (const r of rows) {
+        // Skip profiles that currently have an active membership (they came back)
+        if (activeProfileIds.has(r.profile_id)) continue
         const month = r.end_date?.substring(0, 7)
         if (month) bajasByMonth[month] = (bajasByMonth[month] || 0) + 1
       }
