@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthContext } from '../../shared/components/AuthContext'
 import { supabase } from '../../shared/lib/supabase'
 import PaymentMethodSelector from '../../shared/components/PaymentMethodSelector'
+import BankTransferDetails from '../../shared/components/BankTransferDetails'
 import UserLayout from '../../shared/components/UserLayout'
+import { usePayments } from '../../shared/hooks/usePayments'
 import { ArrowLeft, Loader2, Star, AlertCircle, CheckCircle2 } from 'lucide-react'
 
 type Membership = {
@@ -39,10 +41,25 @@ export default function Membresia() {
   const [checkingMPReturn, setCheckingMPReturn] = useState(false)
   const [mpReturnStatus, setMPReturnStatus] = useState<'success' | 'failure' | null>(null)
 
+  // Bank transfer data
+  const [bankConfig, setBankConfig] = useState<{ cbu?: string; alias?: string; titular?: string; cuit?: string; banco?: string } | null>(null)
+  const { fetchPaymentMethods } = usePayments()
+
+  const loadBankData = async () => {
+    try {
+      const methods = await fetchPaymentMethods()
+      const bankMethod = methods.find((m: any) => m.type === 'bank_transfer' && m.is_active)
+      if (bankMethod?.config) {
+        setBankConfig(bankMethod.config)
+      }
+    } catch { /* ignore */ }
+  }
+
   useEffect(() => {
     if (!profile?.id) return
     fetchMembership()
     fetchPlans()
+    loadBankData()
     checkMPReturn()
     checkPendingTransaction()
   }, [profile?.id])
@@ -374,6 +391,22 @@ export default function Membresia() {
             </div>
           )}
         </section>
+
+        {/* ── Bank transfer details ── */}
+        {bankConfig && (
+          <section className="mt-8">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+              Transferencias
+            </h2>
+            <BankTransferDetails
+              cbu={bankConfig.cbu}
+              alias={bankConfig.alias}
+              titular={bankConfig.titular}
+              cuit={bankConfig.cuit}
+              banco={bankConfig.banco}
+            />
+          </section>
+        )}
 
         {/* ── MP return status banner ── */}
         {checkingMPReturn && mpReturnStatus === 'success' && (

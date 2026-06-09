@@ -3,6 +3,8 @@ import AdminLayout from '../../shared/components/AdminLayout'
 import { supabase } from '../../shared/lib/supabase'
 import PaymentsList from '../components/PaymentsList'
 import ConfirmPaymentModal from '../components/ConfirmPaymentModal'
+import BankTransferDetails from '../../shared/components/BankTransferDetails'
+import { Pencil, ChevronDown } from 'lucide-react'
 import type { Transaction } from '../components/PaymentsList'
 
 const BACKEND_URL =
@@ -37,6 +39,13 @@ export default function Payments() {
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null)
   const [_actionLoading, setActionLoading] = useState(false)
 
+  // Bank transfer data config
+  const [paymentMethods, setPaymentMethods] = useState<any[]>([])
+  const [bankMethod, setBankMethod] = useState<any | null>(null)
+  const [editingBank, setEditingBank] = useState(false)
+  const [bankForm, setBankForm] = useState({ cbu: '', alias: '', titular: '', cuit: '', banco: '' })
+  const [savingBank, setSavingBank] = useState(false)
+
   const fetchTransactions = useCallback(async () => {
     setLoading(true)
     try {
@@ -62,6 +71,7 @@ export default function Payments() {
 
   useEffect(() => {
     fetchTransactions()
+    fetchPaymentMethods()
   }, [fetchTransactions])
 
   const openConfirmModal = (txn: Transaction) => {
@@ -129,6 +139,61 @@ export default function Payments() {
     }
   }
 
+  const fetchPaymentMethods = async () => {
+    try {
+      const headers = await getAuthHeaders()
+      const res = await fetch(`${BACKEND_URL}/api/payments/methods`, { headers })
+      if (res.ok) {
+        const data = await res.json()
+        setPaymentMethods(data.methods ?? [])
+        const bank = (data.methods ?? []).find((m: any) => m.type === 'bank_transfer')
+        setBankMethod(bank ?? null)
+      }
+    } catch { /* ignore */ }
+  }
+
+  const handleStartBankEdit = () => {
+    if (!bankMethod) return
+    const config = bankMethod.config ?? {}
+    setBankForm({
+      cbu: config.cbu ?? '',
+      alias: config.alias ?? '',
+      titular: config.titular ?? '',
+      cuit: config.cuit ?? '',
+      banco: config.banco ?? '',
+    })
+    setEditingBank(true)
+  }
+
+  const handleCancelBankEdit = () => setEditingBank(false)
+
+  const handleSaveBankData = async () => {
+    if (!bankMethod) return
+    setSavingBank(true)
+    try {
+      const headers = await getAuthHeaders()
+      const res = await fetch(`${BACKEND_URL}/api/payments/methods/${bankMethod.id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          config: {
+            cbu: bankForm.cbu.trim(),
+            alias: bankForm.alias.trim(),
+            titular: bankForm.titular.trim(),
+            cuit: bankForm.cuit.trim(),
+            banco: bankForm.banco.trim(),
+          },
+        }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setBankMethod(data.method)
+        setEditingBank(false)
+      }
+    } catch { /* ignore */ }
+    finally { setSavingBank(false) }
+  }
+
   return (
     <AdminLayout pageTitle="Pagos">
       {/* Filters */}
@@ -175,6 +240,150 @@ export default function Payments() {
         onReject={handleReject}
         action={modalAction}
       />
+
+      {/* ── Bank transfer data config ── */}
+      {bankMethod && (
+        <details
+          style={{ marginTop: 32 }}
+          onToggle={(e) => {
+            // used for ChevronDown rotation styling if needed
+          }}
+        >
+          <summary
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: '#111827',
+              cursor: 'pointer',
+              listStyle: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginBottom: 16,
+            }}
+          >
+            <span>Datos de transferencia bancaria</span>
+            <ChevronDown size={16} />
+          </summary>
+          <div
+            style={{
+              borderRadius: 12,
+              border: '1px solid #e5e7eb',
+              backgroundColor: '#fff',
+              padding: 16,
+            }}
+          >
+            {editingBank ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {(['cbu','alias','titular','cuit','banco'] as const).map(field => (
+                  <div key={field}>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: '#6b7280',
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.025,
+                        marginBottom: 4,
+                      }}
+                    >
+                      {field === 'cbu' ? 'CBU' : field === 'cuit' ? 'CUIT' : field.charAt(0).toUpperCase() + field.slice(1)}
+                    </label>
+                    <input
+                      type="text"
+                      value={bankForm[field]}
+                      onChange={e => setBankForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        borderRadius: 8,
+                        border: '1px solid #d1d5db',
+                        backgroundColor: '#fff',
+                        padding: '8px 12px',
+                        fontSize: 14,
+                        color: '#111827',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.borderColor = '#DC2626'
+                        e.target.style.boxShadow = '0 0 0 2px rgba(220,38,38,0.25)'
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = '#d1d5db'
+                        e.target.style.boxShadow = 'none'
+                      }}
+                    />
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: 8, paddingTop: 8 }}>
+                  <button
+                    onClick={handleCancelBankEdit}
+                    style={{
+                      borderRadius: 8,
+                      border: '1px solid #d1d5db',
+                      padding: '8px 16px',
+                      fontSize: 14,
+                      fontWeight: 500,
+                      color: '#374151',
+                      cursor: 'pointer',
+                      backgroundColor: '#fff',
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSaveBankData}
+                    disabled={savingBank}
+                    style={{
+                      borderRadius: 8,
+                      backgroundColor: '#DC2626',
+                      color: '#fff',
+                      fontSize: 14,
+                      fontWeight: 700,
+                      padding: '8px 16px',
+                      border: 'none',
+                      cursor: savingBank ? 'not-allowed' : 'pointer',
+                      opacity: savingBank ? 0.5 : 1,
+                    }}
+                  >
+                    {savingBank ? 'Guardando...' : 'Guardar datos'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <BankTransferDetails
+                  cbu={bankMethod.config?.cbu}
+                  alias={bankMethod.config?.alias}
+                  titular={bankMethod.config?.titular}
+                  cuit={bankMethod.config?.cuit}
+                  banco={bankMethod.config?.banco}
+                />
+                <button
+                  onClick={handleStartBankEdit}
+                  style={{
+                    marginTop: 16,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    borderRadius: 8,
+                    border: '1px solid #e5e7eb',
+                    padding: '8px 16px',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#6b7280',
+                    cursor: 'pointer',
+                    backgroundColor: 'transparent',
+                  }}
+                >
+                  <Pencil size={14} /> Editar datos
+                </button>
+              </div>
+            )}
+          </div>
+        </details>
+      )}
     </AdminLayout>
   )
 }

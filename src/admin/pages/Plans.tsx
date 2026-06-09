@@ -2,16 +2,7 @@ import { useState, useEffect } from 'react'
 import AdminLayout from '../../shared/components/AdminLayout'
 import { supabase } from '../../shared/lib/supabase'
 import { Plus, Settings2, X } from 'lucide-react'
-
-function calculateEndDate(startDate: string, durationMonths: number): string {
-  const date = new Date(startDate)
-  const day = date.getDate()
-  date.setMonth(date.getMonth() + durationMonths)
-  if (date.getDate() !== day) {
-    date.setDate(0)
-  }
-  return date.toISOString().split('T')[0]
-}
+import { calculateEndDate } from '../../shared/lib/dates'
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('es-ES', {
@@ -31,7 +22,15 @@ export default function Plans() {
   const [loading, setLoading] = useState(true)
   const [activeCount, setActiveCount] = useState(0)
   const [expiredCount, setExpiredCount] = useState(0)
-  const [overrideCount, setOverrideCount] = useState(0)
+  const [pendingCount, setPendingCount] = useState(0)
+
+  // Filter
+  const [filter, setFilter] = useState<'all' | 'active' | 'expired' | 'pending'>('all')
+
+  const filteredMemberships = memberships.filter((m) => {
+    if (filter === 'all') return true
+    return m.status === filter
+  })
 
   // Modal
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null)
@@ -61,7 +60,7 @@ export default function Plans() {
     setLoading(true)
     try {
       // Counts
-      const [activeRes, expiredRes, overrideRes] = await Promise.all([
+      const [activeRes, expiredRes, pendingRes] = await Promise.all([
         supabase
           .from('memberships')
           .select('*', { count: 'exact', head: true })
@@ -73,11 +72,11 @@ export default function Plans() {
         supabase
           .from('memberships')
           .select('*', { count: 'exact', head: true })
-          .eq('admin_override', true),
+          .eq('status', 'pending'),
       ])
       setActiveCount(activeRes.count ?? 0)
       setExpiredCount(expiredRes.count ?? 0)
-      setOverrideCount(overrideRes.count ?? 0)
+      setPendingCount(pendingRes.count ?? 0)
 
       // Memberships with nested join
       const { data: memData, error: memError } = await (
@@ -248,21 +247,21 @@ export default function Plans() {
     active: 'bg-green-100 text-green-800',
     expired: 'bg-red-100 text-red-800',
     suspended: 'bg-yellow-100 text-yellow-800',
-    pending: 'bg-gray-100 text-gray-600',
+    pending: 'bg-yellow-100 text-yellow-800',
   }
 
   const statusBgColors: Record<string, string> = {
     active: '#dcfce7',
     expired: '#fee2e2',
     suspended: '#fef9c3',
-    pending: '#f3f4f6',
+    pending: '#fef9c3',
   }
 
   const statusTextColors: Record<string, string> = {
     active: '#166534',
     expired: '#991b1b',
     suspended: '#854d0e',
-    pending: '#4b5563',
+    pending: '#854d0e',
   }
 
   // Check if a member already has any active membership
@@ -283,61 +282,85 @@ export default function Plans() {
           marginBottom: 24,
         }}
       >
-        {/* Card: Activas */}
-        <div
+        {/* Card: Todas */}
+        <button
+          onClick={() => setFilter('all')}
           style={{
             flex: 1,
-            backgroundColor: '#fff',
-            border: '1px solid #e5e7eb',
+            backgroundColor: filter === 'all' ? '#f3f4f6' : '#fff',
+            border: filter === 'all' ? '2px solid #9ca3af' : '1px solid #e5e7eb',
             borderRadius: 10,
             padding: 16,
+            cursor: 'pointer',
+            textAlign: 'left',
+            transition: 'all 0.15s',
           }}
         >
-          <div
-            style={{ fontWeight: 700, fontSize: 28, color: '#111' }}
-          >
+          <div style={{ fontWeight: 700, fontSize: 28, color: '#111' }}>
+            {loading ? '-' : memberships.length}
+          </div>
+          <div style={{ color: '#6b7280', fontSize: 12 }}>Todas</div>
+        </button>
+
+        {/* Card: Activas */}
+        <button
+          onClick={() => setFilter('active')}
+          style={{
+            flex: 1,
+            backgroundColor: filter === 'active' ? '#f0fdf4' : '#fff',
+            border: filter === 'active' ? '2px solid #22c55e' : '1px solid #e5e7eb',
+            borderRadius: 10,
+            padding: 16,
+            cursor: 'pointer',
+            textAlign: 'left',
+            transition: 'all 0.15s',
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: 28, color: '#166534' }}>
             {loading ? '-' : activeCount}
           </div>
           <div style={{ color: '#6b7280', fontSize: 12 }}>Activas</div>
-        </div>
+        </button>
 
         {/* Card: Vencidas */}
-        <div
+        <button
+          onClick={() => setFilter('expired')}
           style={{
             flex: 1,
-            backgroundColor: '#fff',
-            border: '1px solid #e5e7eb',
+            backgroundColor: filter === 'expired' ? '#fef2f2' : '#fff',
+            border: filter === 'expired' ? '2px solid #ef4444' : '1px solid #e5e7eb',
             borderRadius: 10,
             padding: 16,
+            cursor: 'pointer',
+            textAlign: 'left',
+            transition: 'all 0.15s',
           }}
         >
-          <div
-            style={{ fontWeight: 700, fontSize: 28, color: '#DC2626' }}
-          >
+          <div style={{ fontWeight: 700, fontSize: 28, color: '#DC2626' }}>
             {loading ? '-' : expiredCount}
           </div>
           <div style={{ color: '#6b7280', fontSize: 12 }}>Vencidas</div>
-        </div>
+        </button>
 
-        {/* Card: Con override */}
-        <div
+        {/* Card: Pendientes */}
+        <button
+          onClick={() => setFilter('pending')}
           style={{
             flex: 1,
-            backgroundColor: '#fff',
-            border: '1px solid #e5e7eb',
+            backgroundColor: filter === 'pending' ? '#fefce8' : '#fff',
+            border: filter === 'pending' ? '2px solid #eab308' : '1px solid #e5e7eb',
             borderRadius: 10,
             padding: 16,
+            cursor: 'pointer',
+            textAlign: 'left',
+            transition: 'all 0.15s',
           }}
         >
-          <div
-            style={{ fontWeight: 700, fontSize: 28, color: '#f59e0b' }}
-          >
-            {loading ? '-' : overrideCount}
+          <div style={{ fontWeight: 700, fontSize: 28, color: '#854d0e' }}>
+            {loading ? '-' : pendingCount}
           </div>
-          <div style={{ color: '#6b7280', fontSize: 12 }}>
-            Con override
-          </div>
-        </div>
+          <div style={{ color: '#6b7280', fontSize: 12 }}>Pendientes</div>
+        </button>
 
         {/* Spacer — hidden on mobile */}
         {!isMobile && <div style={{ flex: 1 }} />}
@@ -387,7 +410,7 @@ export default function Plans() {
             ? [1, 2, 3, 4, 5].map((i) => (
                 <MobilePlanCardSkeleton key={i} />
               ))
-            : memberships.map((mem) => (
+            : filteredMemberships.map((mem) => (
                 <div
                   key={mem.id}
                   style={{
@@ -551,7 +574,7 @@ export default function Plans() {
                   <SkeletonRow />
                 </>
               ) : (
-                memberships.map((mem) => (
+                filteredMemberships.map((mem) => (
                   <tr
                     key={mem.id}
                     style={{ borderBottom: '1px solid #e5e7eb' }}

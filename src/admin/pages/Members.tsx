@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import AdminLayout from '../../shared/components/AdminLayout'
 import { supabase } from '../../shared/lib/supabase'
 import { Search, UserPlus, Pencil, Trash2, X } from 'lucide-react'
+import { calculateEndDate } from '../../shared/lib/dates'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'
 
@@ -26,6 +27,12 @@ export default function Members() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
+  // Multi-step create + activate
+  const [step, setStep] = useState<'member' | 'membership'>('member')
+  const [formPlanId, setFormPlanId] = useState('')
+  const [formStartDate, setFormStartDate] = useState(new Date().toISOString().split('T')[0])
+  const [plans, setPlans] = useState<any[]>([])
+
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', onResize)
@@ -34,6 +41,7 @@ export default function Members() {
 
   useEffect(() => {
     fetchMembers()
+    fetchPlans()
   }, [])
 
   const fetchMembers = async () => {
@@ -54,6 +62,19 @@ export default function Members() {
     }
   }
 
+  const fetchPlans = async () => {
+    try {
+      const { data } = await (supabase as any)
+        .from('membership_plans')
+        .select('id, name, duration_months, price')
+        .eq('is_active', true)
+        .order('duration_months', { ascending: true })
+      if (data) setPlans(data)
+    } catch {
+      /* ignore */
+    }
+  }
+
   const filteredMembers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
     if (!q) return members
@@ -71,6 +92,9 @@ export default function Members() {
     setFormEmail('')
     setFormPassword('')
     setFormError(null)
+    setStep('member')
+    setFormPlanId('')
+    setFormStartDate(new Date().toISOString().split('T')[0])
     setModalMode('create')
   }
 
@@ -90,6 +114,9 @@ export default function Members() {
     setFormEmail('')
     setFormPassword('')
     setFormError(null)
+    setStep('member')
+    setFormPlanId('')
+    setFormStartDate(new Date().toISOString().split('T')[0])
   }
 
   const handleSave = async () => {
@@ -144,7 +171,28 @@ export default function Members() {
 
         if (!res.ok) throw new Error(data.error || `Error ${res.status} del servidor`)
 
-        alert('Miembro creado con éxito.')
+        // If step 2 with membership, also create membership
+        if (step === 'membership' && formPlanId && formStartDate) {
+          const plan = plans.find((p: any) => p.id === formPlanId)
+          if (plan) {
+            const endDate = calculateEndDate(formStartDate, plan.duration_months)
+            const { error: memError } = await (supabase.from('memberships') as any).insert({
+              profile_id: data.user.id,
+              plan_id: formPlanId,
+              start_date: formStartDate,
+              end_date: endDate,
+              status: 'active',
+              admin_override: false,
+            })
+            if (memError) {
+              alert(`Miembro creado, pero la membresía no pudo activarse: ${memError.message}`)
+            } else {
+              alert('Miembro creado con membresía activa.')
+            }
+          }
+        } else {
+          alert('Miembro creado con éxito.')
+        }
       } else if (modalMode === 'edit' && selectedMember) {
         const { error } = await (supabase.from('profiles') as any)
           .update({
@@ -337,6 +385,11 @@ export default function Members() {
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#111' }}>
                 {modalMode === 'create' ? 'Nuevo miembro' : 'Editar miembro'}
               </h2>
+              {modalMode === 'create' && (
+                <span style={{ fontSize: 12, color: '#9ca3af' }}>
+                  Paso {step === 'member' ? 1 : 2} de 2
+                </span>
+              )}
               <button onClick={closeModal} style={iconBtnCleanStyle}>
                 <X size={20} />
               </button>
@@ -344,98 +397,268 @@ export default function Members() {
 
             {/* Form */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div>
-                <label style={labelStyle}>
-                  Nombre completo <span style={{ color: '#DC2626' }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  placeholder="Ej: Juan Pérez"
-                  style={inputStyle}
-                  onFocus={(e) => (e.target.style.borderColor = '#DC2626')}
-                  onBlur={(e) => (e.target.style.borderColor = '#e5e7eb')}
-                />
-              </div>
+              {modalMode === 'edit' ? (
+                <>
+                  <div>
+                    <label style={labelStyle}>
+                      Nombre completo <span style={{ color: '#DC2626' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
+                      placeholder="Ej: Juan Pérez"
+                      style={inputStyle}
+                      onFocus={(e) => (e.target.style.borderColor = '#DC2626')}
+                      onBlur={(e) => (e.target.style.borderColor = '#e5e7eb')}
+                    />
+                  </div>
 
-              <div>
-                <label style={labelStyle}>
-                  Correo electrónico <span style={{ color: '#DC2626' }}>*</span>
-                </label>
-                <input
-                  type="email"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  placeholder="Ej: juan@example.com"
-                  style={inputStyle}
-                  onFocus={(e) => (e.target.style.borderColor = '#DC2626')}
-                  onBlur={(e) => (e.target.style.borderColor = '#e5e7eb')}
-                />
-              </div>
+                  <div>
+                    <label style={labelStyle}>
+                      Teléfono{' '}
+                      <span style={{ color: '#9ca3af', fontSize: 12 }}>(opcional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formPhone}
+                      onChange={(e) => setFormPhone(e.target.value)}
+                      placeholder="Ej: +54 11 1234 5678"
+                      style={inputStyle}
+                      onFocus={(e) => (e.target.style.borderColor = '#DC2626')}
+                      onBlur={(e) => (e.target.style.borderColor = '#e5e7eb')}
+                    />
+                  </div>
 
-              <div>
-                <label style={labelStyle}>
-                  Contraseña temporal <span style={{ color: '#DC2626' }}>*</span>
-                </label>
-                <input
-                  type="password"
-                  value={formPassword}
-                  onChange={(e) => setFormPassword(e.target.value)}
-                  placeholder="Mínimo 8 caracteres"
-                  style={inputStyle}
-                  onFocus={(e) => (e.target.style.borderColor = '#DC2626')}
-                  onBlur={(e) => (e.target.style.borderColor = '#e5e7eb')}
-                />
-                <p style={{ margin: 0, fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>
-                  Esta contraseña es temporal. Entregásela al miembro en mano.
-                </p>
-              </div>
+                  {formError && (
+                    <p style={{ margin: 0, fontSize: 13, color: '#DC2626' }}>{formError}</p>
+                  )}
 
-              <div>
-                <label style={labelStyle}>
-                  Teléfono{' '}
-                  <span style={{ color: '#9ca3af', fontSize: 12 }}>(opcional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={formPhone}
-                  onChange={(e) => setFormPhone(e.target.value)}
-                  placeholder="Ej: +54 11 1234 5678"
-                  style={inputStyle}
-                  onFocus={(e) => (e.target.style.borderColor = '#DC2626')}
-                  onBlur={(e) => (e.target.style.borderColor = '#e5e7eb')}
-                />
-              </div>
+                  {/* Footer */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'flex-end',
+                      gap: 12,
+                      marginTop: 8,
+                    }}
+                  >
+                    <button onClick={closeModal} style={btnSecondaryStyle}>
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      style={{
+                        ...btnPrimaryStyle,
+                        opacity: saving ? 0.6 : 1,
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {saving ? 'Guardando...' : 'Guardar'}
+                    </button>
+                  </div>
+                </>
+              ) : step === 'member' ? (
+                <>
+                  <div>
+                    <label style={labelStyle}>
+                      Nombre completo <span style={{ color: '#DC2626' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
+                      placeholder="Ej: Juan Pérez"
+                      style={inputStyle}
+                      onFocus={(e) => (e.target.style.borderColor = '#DC2626')}
+                      onBlur={(e) => (e.target.style.borderColor = '#e5e7eb')}
+                    />
+                  </div>
 
-              {formError && (
-                <p style={{ margin: 0, fontSize: 13, color: '#DC2626' }}>{formError}</p>
+                  <div>
+                    <label style={labelStyle}>
+                      Correo electrónico <span style={{ color: '#DC2626' }}>*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={formEmail}
+                      onChange={(e) => setFormEmail(e.target.value)}
+                      placeholder="Ej: juan@example.com"
+                      style={inputStyle}
+                      onFocus={(e) => (e.target.style.borderColor = '#DC2626')}
+                      onBlur={(e) => (e.target.style.borderColor = '#e5e7eb')}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={labelStyle}>
+                      Contraseña temporal <span style={{ color: '#DC2626' }}>*</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={formPassword}
+                      onChange={(e) => setFormPassword(e.target.value)}
+                      placeholder="Mínimo 8 caracteres"
+                      style={inputStyle}
+                      onFocus={(e) => (e.target.style.borderColor = '#DC2626')}
+                      onBlur={(e) => (e.target.style.borderColor = '#e5e7eb')}
+                    />
+                    <p style={{ margin: 0, fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>
+                      Esta contraseña es temporal. Entregásela al miembro en mano.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label style={labelStyle}>
+                      Teléfono{' '}
+                      <span style={{ color: '#9ca3af', fontSize: 12 }}>(opcional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formPhone}
+                      onChange={(e) => setFormPhone(e.target.value)}
+                      placeholder="Ej: +54 11 1234 5678"
+                      style={inputStyle}
+                      onFocus={(e) => (e.target.style.borderColor = '#DC2626')}
+                      onBlur={(e) => (e.target.style.borderColor = '#e5e7eb')}
+                    />
+                  </div>
+
+                  {formError && (
+                    <p style={{ margin: 0, fontSize: 13, color: '#DC2626' }}>{formError}</p>
+                  )}
+
+                  {/* Activate membership button */}
+                  <button
+                    onClick={() => setStep('membership')}
+                    style={{
+                      ...btnSecondaryStyle,
+                      width: '100%',
+                      justifyContent: 'center',
+                      marginTop: 8,
+                    }}
+                  >
+                    Activar membresía →
+                  </button>
+
+                  {/* Footer */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'flex-end',
+                      gap: 12,
+                      marginTop: 8,
+                    }}
+                  >
+                    <button onClick={closeModal} style={btnSecondaryStyle}>
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      style={{
+                        ...btnPrimaryStyle,
+                        opacity: saving ? 0.6 : 1,
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {saving ? 'Guardando...' : 'Guardar'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Back button */}
+                  <button
+                    onClick={() => setStep('member')}
+                    style={{
+                      ...btnSecondaryStyle,
+                      alignSelf: 'flex-start',
+                      justifyContent: 'center',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    ← Volver
+                  </button>
+
+                  {/* Plan selector */}
+                  <div>
+                    <label style={labelStyle}>
+                      Plan <span style={{ color: '#DC2626' }}>*</span>
+                    </label>
+                    <select
+                      value={formPlanId}
+                      onChange={(e) => setFormPlanId(e.target.value)}
+                      style={inputStyle}
+                    >
+                      <option value="">Seleccionar plan...</option>
+                      {plans.map((p: any) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} — {new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(p.price)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Start date */}
+                  <div>
+                    <label style={labelStyle}>Fecha de inicio</label>
+                    <input
+                      type="date"
+                      value={formStartDate}
+                      onChange={(e) => setFormStartDate(e.target.value)}
+                      style={inputStyle}
+                    />
+                  </div>
+
+                  {/* Computed end date */}
+                  {formPlanId && formStartDate && (() => {
+                    const plan = plans.find((p: any) => p.id === formPlanId)
+                    if (!plan) return null
+                    const endDate = calculateEndDate(formStartDate, plan.duration_months)
+                    return (
+                      <div>
+                        <label style={{ ...labelStyle, color: '#9ca3af' }}>Vencimiento</label>
+                        <p style={{ fontSize: 14, color: '#111', fontWeight: 500 }}>
+                          {new Date(endDate + 'T00:00:00').toLocaleDateString('es-AR')}
+                        </p>
+                      </div>
+                    )
+                  })()}
+
+                  {formError && (
+                    <p style={{ margin: 0, fontSize: 13, color: '#DC2626' }}>{formError}</p>
+                  )}
+
+                  {/* Footer */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'flex-end',
+                      gap: 12,
+                      marginTop: 8,
+                    }}
+                  >
+                    <button onClick={closeModal} style={btnSecondaryStyle}>
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      style={{
+                        ...btnPrimaryStyle,
+                        opacity: saving ? 0.6 : 1,
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {saving ? 'Guardando...' : 'Crear y activar'}
+                    </button>
+                  </div>
+                </>
               )}
-
-              {/* Footer */}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  gap: 12,
-                  marginTop: 8,
-                }}
-              >
-                <button onClick={closeModal} style={btnSecondaryStyle}>
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  style={{
-                    ...btnPrimaryStyle,
-                    opacity: saving ? 0.6 : 1,
-                    cursor: saving ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {saving ? 'Guardando...' : 'Guardar'}
-                </button>
-              </div>
             </div>
           </div>
         </div>
