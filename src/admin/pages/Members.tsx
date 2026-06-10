@@ -140,25 +140,35 @@ export default function Members() {
 
     try {
       if (modalMode === 'create') {
-        let res: Response
-        try {
-          res = await fetch(`${API_URL}/api/members`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: formEmail.trim(),
-              password: formPassword,
-              full_name: formName.trim(),
-              phone: formPhone.trim() || undefined,
-            }),
-          })
-        } catch (fetchErr) {
-          console.error('Fetch error — backend no responde:', fetchErr)
-          throw new Error(
-            `No se puede conectar con el backend (${API_URL}). ` +
-            'Asegurate de que el servidor esté corriendo y el CORS permita este origen.',
-          )
+        // Retry up to 3 times for Render cold start (free tier sleeps after 15 min)
+        let res: Response | undefined
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            res = await fetch(`${API_URL}/api/members`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: formEmail.trim(),
+                password: formPassword,
+                full_name: formName.trim(),
+                phone: formPhone.trim() || undefined,
+              }),
+            })
+            break // success, exit retry loop
+          } catch (fetchErr) {
+            if (attempt < 3) {
+              console.warn(`Intento ${attempt} falló, reintentando en 3s...`)
+              await new Promise((r) => setTimeout(r, 3000))
+            } else {
+              console.error('Fetch error — backend no responde:', fetchErr)
+              throw new Error(
+                `No se puede conectar con el backend (${API_URL}). ` +
+                'Asegurate de que el servidor esté corriendo y el CORS permita este origen.',
+              )
+            }
+          }
         }
+        if (!res) throw new Error('Error inesperado al conectar con el backend.')
 
         let data: any
         try {
