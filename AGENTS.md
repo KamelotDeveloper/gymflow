@@ -37,6 +37,14 @@ Sistema de gestión de gimnasio. Dos roles: **admin** (dashboard de gestión) y 
 - Planes se desactivan (`is_active = false`), no se borran.
 - Ejercicios requieren video URL (YouTube u otro) — no hay ejercicio sin video.
 
+## Deploy / URLs
+
+- **No localhost**. No hay desarrollo local. Todo apunta a producción.
+- Frontend: Cloudflare Pages — `https://bb0e6a19.gymflow-21q.pages.dev`
+- Backend: Render — `https://gymflow-8ect.onrender.com`
+- `VITE_BACKEND_URL` / `VITE_API_URL` overridean la URL del backend en el frontend. Si no están seteadas, se usa Render.
+- `FRONTEND_URL` en el backend (env var en Render) define el origen permitido para CORS y URLs de redirección de Mercado Pago.
+
 ## Files
 
 | File | What |

@@ -120,7 +120,7 @@ export default function Config() {
   const BACKEND_URL =
     import.meta.env.VITE_BACKEND_URL ||
     import.meta.env.VITE_API_URL ||
-    'http://localhost:3000'
+    'https://gymflow-8ect.onrender.com'
 
   const fetchPaymentMethods = async () => {
     setMethodsLoading(true)

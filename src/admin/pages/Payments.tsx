@@ -10,7 +10,7 @@ import type { Transaction } from '../components/PaymentsList'
 const BACKEND_URL =
   import.meta.env.VITE_BACKEND_URL ||
   import.meta.env.VITE_API_URL ||
-  'http://localhost:3000'
+  'https://gymflow-8ect.onrender.com'
 
 type StatusFilter = '' | 'pending' | 'confirmed' | 'rejected'
 

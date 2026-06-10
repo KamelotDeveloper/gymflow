@@ -25,7 +25,7 @@ type ManualPaymentParams = {
 const BACKEND_URL =
   import.meta.env.VITE_BACKEND_URL ||
   import.meta.env.VITE_API_URL ||
-  'http://localhost:3000'
+  'https://gymflow-8ect.onrender.com'
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession()
