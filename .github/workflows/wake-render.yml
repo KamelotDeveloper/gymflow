@@ -10,5 +10,11 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Health check
-        run: curl -sS --max-time 15 https://gymflow-8ect.onrender.com/api/health
+      - name: Health check (with retry for cold start)
+        run: |
+          for i in 1 2 3; do
+            curl -sS --max-time 60 https://gymflow-8ect.onrender.com/api/health && exit 0
+            echo "Attempt $i failed, sleeping 10s..."
+            sleep 10
+          done
+          exit 1
