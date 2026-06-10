@@ -5,7 +5,7 @@ import { Search, UserPlus, Pencil, Trash2, X } from 'lucide-react'
 import { calculateEndDate } from '../../shared/lib/dates'
 
 // Backend URL for member creation (Render handles cold start with 3 retries)
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'
+const API_URL = import.meta.env.VITE_BACKEND_URL || 'https://gymflow-8ect.onrender.com'
 
 type Member = {
   id: string
