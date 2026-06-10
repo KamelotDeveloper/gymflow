@@ -193,9 +193,9 @@ router.post('/mp/create-preference', async (req, res) => {
           },
         ],
         back_urls: {
-          success: `${process.env.FRONTEND_URL || 'https://bb0e6a19.gymflow-21q.pages.dev'}/membresia?txn=${txn.id}`,
-          failure: `${process.env.FRONTEND_URL || 'https://bb0e6a19.gymflow-21q.pages.dev'}/membresia?error=mp_failure`,
-          pending: `${process.env.FRONTEND_URL || 'https://bb0e6a19.gymflow-21q.pages.dev'}/membresia?txn=${txn.id}`,
+          success: `${process.env.FRONTEND_URL || 'https://gymflow-21q.pages.dev'}/membresia?txn=${txn.id}`,
+          failure: `${process.env.FRONTEND_URL || 'https://gymflow-21q.pages.dev'}/membresia?error=mp_failure`,
+          pending: `${process.env.FRONTEND_URL || 'https://gymflow-21q.pages.dev'}/membresia?txn=${txn.id}`,
         },
         auto_return: 'all',
         notification_url: `${process.env.SUPABASE_URL}/functions/v1/mercadopago-webhook`,

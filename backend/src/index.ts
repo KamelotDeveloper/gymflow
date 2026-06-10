@@ -7,7 +7,7 @@ import { expireMemberships } from './jobs/expireMemberships.js'
 
 const app = express()
 const PORT = process.env.PORT || 3000
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://bb0e6a19.gymflow-21q.pages.dev'
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://gymflow-21q.pages.dev'
 
 // ── Middleware ──
 const allowedOrigins = FRONTEND_URL.split(',').map((s) => s.trim())
