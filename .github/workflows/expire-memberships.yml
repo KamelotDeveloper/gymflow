@@ -1,0 +1,19 @@
+# Exipra membresías vencidas cada 6h usando la service_role_key de Supabase
+# No depende de Render ni de pg_cron — corre directo desde GitHub Actions
+name: Expire Memberships
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # cada 6 horas
+  workflow_dispatch:          # permite ejecutarlo manualmente desde la UI
+
+jobs:
+  expire:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar RPC expire_memberships
+        run: |
+          curl -s -X POST "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/expire_memberships" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            --fail
