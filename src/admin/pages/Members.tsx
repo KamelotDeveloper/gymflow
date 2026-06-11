@@ -198,6 +198,33 @@ export default function Members() {
             if (memError) {
               alert(`Miembro creado, pero la membresía no pudo activarse: ${memError.message}`)
             } else {
+              // ── Registrar transacción de pago para que el ingreso aparezca en el dashboard ──
+              try {
+                const { data: { user: adminUser } } = await supabase.auth.getUser()
+                const { data: cashMethod } = await (supabase as any)
+                  .from('payment_methods')
+                  .select('id')
+                  .eq('type', 'cash')
+                  .eq('is_active', true)
+                  .maybeSingle()
+
+                if (adminUser && cashMethod) {
+                  await supabase.from('payment_transactions').insert({
+                    profile_id: data.user.id,
+                    plan_id: formPlanId,
+                    payment_method_id: cashMethod.id,
+                    amount: plan.price,
+                    currency: 'ARS',
+                    status: 'confirmed',
+                    confirmed_by: adminUser.id,
+                    confirmed_at: new Date().toISOString(),
+                  })
+                }
+              } catch (txnErr) {
+                console.error('No se pudo registrar la transacción de pago:', txnErr)
+                // No bloqueamos — la membresía ya está activa
+              }
+
               alert('Miembro creado con membresía activa.')
             }
           }

@@ -126,7 +126,7 @@ export default function Home() {
         return m
       }
 
-      // Próxima rutina (siguiente día SIN entrenar esta semana)
+      // Próxima rutina: siguiente día después de la última sesión
       const { data: routines } = await (supabase as any)
         .from('routines')
         .select('id, name, day_number')
@@ -134,22 +134,25 @@ export default function Home() {
         .order('day_number', { ascending: true })
 
       if (routines && routines.length > 0) {
-        const weekStart = getMonday(today).toISOString().split('T')[0]
-        let found = null
-        for (const r of routines) {
-          const { data: existing } = await (supabase as any)
-            .from('workout_sessions')
-            .select('id')
-            .eq('profile_id', pid)
-            .eq('routine_id', r.id)
-            .gte('session_date', weekStart)
-            .limit(1)
-          if (!existing || existing.length === 0) {
-            found = r.name
-            break
+        const { data: lastSession } = await (supabase as any)
+          .from('workout_sessions')
+          .select('routine_id')
+          .eq('profile_id', pid)
+          .order('session_date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (lastSession) {
+          const lastIdx = routines.findIndex(r => r.id === lastSession.routine_id)
+          if (lastIdx >= 0 && lastIdx < routines.length - 1) {
+            setNextRoutineDay(routines[lastIdx + 1].name)
+          } else {
+            setNextRoutineDay(routines[0].name)
           }
+        } else {
+          setNextRoutineDay(routines[0].name)
         }
-        setNextRoutineDay(found ?? routines[routines.length - 1].name)
       }
 
       // Racha: semanas consecutivas con al menos 1 sesión

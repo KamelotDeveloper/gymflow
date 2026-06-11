@@ -23,6 +23,11 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+// ── Ping externo (mantiene Render despierto para que node-cron funcione) ──
+app.get('/api/cron/ping', (_req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
 // ── Cron: expire membresías todos los días a las 03:00 ──
 cron.schedule('0 3 * * *', () => {
   expireMemberships()
