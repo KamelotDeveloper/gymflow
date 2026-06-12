@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Llamar RPC expire_memberships
         run: |
-          curl -s -X POST "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/expire_memberships" \
+          curl -v -X POST "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/expire_memberships" \
             -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            --fail
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"
