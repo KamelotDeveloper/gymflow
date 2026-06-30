@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import AdminLayout from '../../shared/components/AdminLayout'
 import { supabase } from '../../shared/lib/supabase'
-import { Plus, Settings2, X } from 'lucide-react'
+import { Plus, Settings2, Trash2, X } from 'lucide-react'
 import { calculateEndDate } from '../../shared/lib/dates'
 
 function formatDate(dateStr: string): string {
@@ -225,6 +225,21 @@ export default function Plans() {
       )
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleDelete = async (membership: any) => {
+    if (!window.confirm(`¿Eliminar la membresía de "${membership.profile?.full_name ?? 'desconocido'}"?`)) return
+
+    try {
+      const { error } = await (supabase.from('memberships') as any)
+        .delete()
+        .eq('id', membership.id)
+      if (error) throw error
+      await fetchAll()
+    } catch (err: any) {
+      console.error('Error al eliminar membresía:', err)
+      alert(err?.message || 'Error al eliminar la membresía.')
     }
   }
 
@@ -470,6 +485,13 @@ export default function Plans() {
                           <Plus size={16} />
                         </IconButton>
                       )}
+                      <IconButton
+                        onClick={() => handleDelete(mem)}
+                        title="Eliminar"
+                        style={{ color: '#DC2626' }}
+                      >
+                        <Trash2 size={16} />
+                      </IconButton>
                     </div>
                   </div>
 
@@ -623,6 +645,13 @@ export default function Plans() {
                             <Plus size={16} />
                           </IconButton>
                         )}
+                        <IconButton
+                          onClick={() => handleDelete(mem)}
+                          title="Eliminar"
+                          style={{ color: '#DC2626' }}
+                        >
+                          <Trash2 size={16} />
+                        </IconButton>
                       </div>
                     </Td>
                   </tr>
