@@ -144,7 +144,7 @@ export default function Home() {
           .maybeSingle()
 
         if (lastSession) {
-          const lastIdx = routines.findIndex(r => r.id === lastSession.routine_id)
+          const lastIdx = routines.findIndex((r: any) => r.id === lastSession.routine_id)
           if (lastIdx >= 0 && lastIdx < routines.length - 1) {
             setNextRoutineDay(routines[lastIdx + 1].name)
           } else {
