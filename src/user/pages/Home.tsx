@@ -306,7 +306,8 @@ export default function Home() {
         .select(`
           weight_kg,
           reps,
-          exercise:exercises!inner(muscle_group)
+          exercise:exercises!inner(muscle_group),
+          session:workout_sessions!inner(profile_id, session_date)
         `)
         .eq('session.profile_id', pid)
         .gte('session.session_date', startISO)
